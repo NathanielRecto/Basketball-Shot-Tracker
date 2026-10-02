@@ -11,6 +11,32 @@ Two models are evaluated separately:
 Regenerate every figure and number on this page with `python scripts/make_report.py`
 (raw numbers: [`results_metrics.json`](results_metrics.json)).
 
+## Data splits
+
+| Data | Split | Notes |
+|---|---|---|
+| Detector dataset ("hotshot", CC BY 4.0) | 3,023 train / 190 validation / 412 test images | Publisher's split. The test images share source videos with the training images (checked by file name), so only validation metrics are reported as headline detector numbers |
+| Evaluation videos | 8 dev / 8 test videos, 98 / 103 hand-labelled shots | Split by whole video before any tuning, one video of every setup per half. The detector never trained on any of them |
+
+| Video | Split | Court | Camera | Shot type | Length | Shots labelled (made) |
+|---|---|---|---|---|---|---|
+| 1 | Dev | Outdoors | ground, right side | free throws | 1:54 | 16 (10) |
+| 4 | Dev | Outdoors | ground, left side | three-pointers | 1:43 | 13 (1) |
+| 5 | Dev | Outdoors | tripod (1.5 m), right side | free throws | 1:30 | 13 (8) |
+| 8 | Dev | Outdoors | tripod (1.5 m), left side | three-pointers | 1:22 | 8 (2) |
+| 9 | Dev | Indoors | ground, right side | free throws | 1:56 | 15 (7) |
+| 12 | Dev | Indoors | ground, left side | three-pointers | 1:00 | 7 (1) |
+| 13 | Dev | Indoors | tripod (1.5 m), right side | free throws | 1:32 | 19 (10) |
+| 16 | Dev | Indoors | tripod (1.5 m), left side | three-pointers | 1:00 | 7 (2) |
+| 2 | Test | Outdoors | ground, right side | three-pointers | 1:39 | 12 (4) |
+| 3 | Test | Outdoors | ground, left side | free throws | 1:41 | 12 (9) |
+| 6 | Test | Outdoors | tripod (1.5 m), right side | three-pointers | 2:02 | 11 (4) |
+| 7 | Test | Outdoors | tripod (1.5 m), left side | free throws | 1:48 | 16 (5) |
+| 10 | Test | Indoors | ground, right side | three-pointers | 1:19 | 10 (5) |
+| 11 | Test | Indoors | ground, left side | free throws | 1:58 | 14 (4) |
+| 14 | Test | Indoors | tripod (1.5 m), right side | three-pointers | 1:43 | 12 (4) |
+| 15 | Test | Indoors | tripod (1.5 m), left side | free throws | 1:55 | 16 (8) |
+
 ## 1. Detector training
 
 | Setting | Value |

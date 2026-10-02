@@ -45,6 +45,18 @@ the right tool here.
   <img src="docs/images/shot_confusion_matrix.png" width="820" alt="Confusion matrices of made / missed / not found for dev and test videos">
 </p>
 
+## Data splits
+
+Two separate datasets, never mixed: the detector was **not** trained on any of the 16
+evaluation videos.
+
+| Data | Used for | Split | How it was split |
+|---|---|---|---|
+| **"hotshot" detector dataset** (3,625 images, CC BY 4.0) | Training the ball/hoop detector | 3,023 train / 190 validation / 412 test images | The dataset publisher's own split (Roboflow export), not ours. Its test images come from the same source videos as its training images, so its test mAP (0.970) is inflated; the validation numbers are the honest detector metrics |
+| **16 phone videos** (201 hand-labelled shots) | Measuring the whole system's make/miss accuracy | **Dev** (98 shots): videos 1, 4, 5, 8, 9, 12, 13, 16<br>**Test** (103 shots): videos 2, 3, 6, 7, 10, 11, 14, 15 | By **whole video** (frames of one video never land on both sides), fixed before any tuning, balanced so each half has one video of every setup (indoor/outdoor × ground/tripod camera × free throw/three-pointer). Dev for debugging and tuning; test scored once at the end |
+
+Per-video details: [docs/RESULTS.md](docs/RESULTS.md#data-splits).
+
 ## How it works
 
 ```mermaid
@@ -226,8 +238,9 @@ docs/labeling.md   how to label evaluation videos
 
 ## Roadmap
 
-1. **Own footage**: film sessions (indoor and outdoor) with an iPhone on a tripod, fine-tune the
-   detector, and measure on **new** held-out clips (the current test set has been used).
+1. **Own footage**: film sessions (indoor and outdoor) with an iPhone on a tripod
+   ([filming checklist](docs/filming_checklist.md)), fine-tune the detector, and measure on **new**
+   held-out sessions (the current test set has been used).
 2. **iPhone app** (Expo / React Native): live camera, tap-the-hoop setup, real-time MADE / MISSED
    calls on the phone, running FG%, offline use at the court.
 3. Validate release / entry angles and pose metrics against ground truth.
