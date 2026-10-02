@@ -36,6 +36,15 @@ Test accuracy by setup: indoor **88.5%**, outdoor **66.7%**; free throws 84.5%, 
 68.9%. The gap is almost entirely **shots never found outdoors**: the baseline detector was
 trained on ~4 mostly indoor/broadcast source videos. That is the next thing to fix (see Roadmap).
 
+**📊 Full results: [docs/RESULTS.md](docs/RESULTS.md)**: training curves per epoch, precision-recall
+and F1 curves, confusion matrices, precision / recall / F1 for shot detection and made vs missed,
+confidence intervals (including a video-level bootstrap), and why k-fold cross-validation is not
+the right tool here.
+
+<p align="center">
+  <img src="docs/images/shot_confusion_matrix.png" width="820" alt="Confusion matrices of made / missed / not found for dev and test videos">
+</p>
+
 ## How it works
 
 ```mermaid
@@ -146,6 +155,7 @@ wrongly called shot with its timestamp.
 | `scripts/replay_eval.py --errors` | Scores the current code against labels in seconds, with context for each error |
 | `scripts/replay_all.py` | Compares settings across videos; flags shots that match no visible arc |
 | `scripts/eval_synthetic.py` | Stress-tests the judging logic on simulated shots with noise and missed detections |
+| `scripts/make_report.py` | Rebuilds every figure and metric in `docs/RESULTS.md` |
 
 ## More detail
 

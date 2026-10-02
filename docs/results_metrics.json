@@ -1,0 +1,133 @@
+{
+  "detector_training": {
+    "epochs": 30,
+    "best_epoch": 29,
+    "patience": 10,
+    "batch": 8,
+    "imgsz": 640,
+    "model": "yolov8s.pt",
+    "hours": 3.81,
+    "best": {
+      "mAP50": 0.882,
+      "mAP50-95": 0.404,
+      "precision": 0.891,
+      "recall": 0.849
+    },
+    "final_train_loss": 2.794,
+    "final_val_loss": 3.949
+  },
+  "dev": {
+    "labelled": 98,
+    "found": 91,
+    "predicted": 91,
+    "extra": 0,
+    "shot_detection": {
+      "precision": 1.0,
+      "recall": 0.929,
+      "f1": 0.963
+    },
+    "make_on_found": {
+      "accuracy": 0.956,
+      "precision": 0.944,
+      "recall": 0.944,
+      "f1": 0.944
+    },
+    "make_end_to_end": {
+      "precision": 0.944,
+      "recall": 0.829,
+      "f1": 0.883
+    },
+    "end_to_end_accuracy": 0.888,
+    "ci95_wilson_shots": [
+      0.81,
+      0.936
+    ],
+    "ci95_bootstrap_videos": [
+      0.816,
+      0.951
+    ],
+    "per_video_accuracy": {
+      "video_01": 0.812,
+      "video_04": 0.923,
+      "video_05": 1.0,
+      "video_08": 1.0,
+      "video_09": 0.867,
+      "video_12": 0.571,
+      "video_13": 0.895,
+      "video_16": 1.0
+    },
+    "per_video_range": [
+      0.571,
+      1.0
+    ],
+    "confusion": {
+      "made -> made": 34,
+      "made -> missed": 2,
+      "made -> not found": 5,
+      "missed -> made": 2,
+      "missed -> missed": 53,
+      "missed -> not found": 2
+    },
+    "extra_shots": {
+      "made": 0,
+      "missed": 0
+    }
+  },
+  "test": {
+    "labelled": 103,
+    "found": 85,
+    "predicted": 86,
+    "extra": 1,
+    "shot_detection": {
+      "precision": 0.988,
+      "recall": 0.825,
+      "f1": 0.899
+    },
+    "make_on_found": {
+      "accuracy": 0.941,
+      "precision": 0.872,
+      "recall": 1.0,
+      "f1": 0.932
+    },
+    "make_end_to_end": {
+      "precision": 0.872,
+      "recall": 0.791,
+      "f1": 0.829
+    },
+    "end_to_end_accuracy": 0.777,
+    "ci95_wilson_shots": [
+      0.687,
+      0.846
+    ],
+    "ci95_bootstrap_videos": [
+      0.612,
+      0.899
+    ],
+    "per_video_accuracy": {
+      "video_02": 0.25,
+      "video_03": 1.0,
+      "video_06": 0.727,
+      "video_07": 0.688,
+      "video_10": 0.9,
+      "video_11": 0.857,
+      "video_14": 0.917,
+      "video_15": 0.875
+    },
+    "per_video_range": [
+      0.25,
+      1.0
+    ],
+    "confusion": {
+      "made -> made": 34,
+      "made -> missed": 0,
+      "made -> not found": 9,
+      "missed -> made": 5,
+      "missed -> missed": 46,
+      "missed -> not found": 9
+    },
+    "extra_shots": {
+      "made": 0,
+      "missed": 1
+    }
+  }
+}
