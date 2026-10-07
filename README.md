@@ -39,9 +39,10 @@ all tuning was frozen (**test**). Each half has one video of every setup.
 
 Test accuracy by setup: indoor **88.5%**, outdoor **66.7%**; free throws 84.5%, three-pointers
 68.9%. The gap is almost entirely **shots never found outdoors**: the baseline detector was
-trained on ~4 mostly indoor/broadcast source videos. That is the next thing to fix (see Roadmap).
+trained on ~4 mostly indoor/broadcast source videos. The retrained detector v2 fixed most of it
+(outdoor 90.2% on re-test, see below).
 
-**📊 Full results: [docs/RESULTS.md](docs/RESULTS.md)**: training curves per epoch, precision-recall
+**📊 Full results: [docs/RESULTS.md](docs/RESULTS.md)**: training curves per epoch (detector v1 and v2), precision-recall
 and F1 curves, confusion matrices, precision / recall / F1 for shot detection and made vs missed,
 confidence intervals (including a video-level bootstrap), and why k-fold cross-validation is not
 the right tool here.
@@ -201,15 +202,17 @@ wrongly called shot with its timestamp.
 | `scripts/eval_synthetic.py` | Stress-tests the judging logic on simulated shots with noise and missed detections |
 | `scripts/export_app_fixtures.py` | Exports settings + golden test cases the phone app's port must reproduce exactly ([docs/app_port.md](docs/app_port.md)) |
 | `scripts/compare_runs.py` | Scores several runs (e.g. old vs new tracker or detector) on the same labelled shots, side by side |
-| `scripts/make_report.py` | Rebuilds every figure and metric in `docs/RESULTS.md` (sections 1–4) |
+| `scripts/make_report.py` | Rebuilds the figures and metrics in `docs/RESULTS.md` sections 1–4 and the detector v2 training charts |
 
 ## More detail
 
 ### Detector
 
 **Current (v2):** fine-tuned from the baseline for 12 epochs at 960 px on hotshot + 5,324 Hooper
-frames (`scripts/build_combined_dataset.py`); validation mAP50 0.851 (ball 0.747, hoop 0.931) on
-880 held-out images. Details: [docs/RESULTS.md §6](docs/RESULTS.md#detector-v2).
+frames (`scripts/build_combined_dataset.py`), batch 2, 8.0 h on a GTX 1660 SUPER; validation mAP50
+0.851 (ball 0.747, hoop 0.931) on 880 held-out images. The best epoch was the last and validation
+metrics were still rising, so more epochs would likely help a little. Per-epoch curves and charts:
+[docs/RESULTS.md §6](docs/RESULTS.md#detector-v2).
 
 **Baseline (v1)**, yolov8s, 30 epochs on the CC BY 4.0 "hotshot" dataset:
 
@@ -249,8 +252,8 @@ the logic on the project's own simulator, not real-world accuracy.
 
 ## Assumptions and limits
 
-* Fixed camera, hoop in frame. Best from the side; a camera under the hoop facing the court works
-  much worse so far (37.8%, see above). Angles are 2D projections.
+* Fixed camera, hoop in frame. Best from the side; a camera under the hoop facing the court is
+  harder (78.2% on re-test vs 92.2% on side-on video, see above). Angles are 2D projections.
 * One ball in play. Jump shots and free throws: **layups, bank shots and tip-ins are not
   specifically handled**.
 * A call comes ~0.45 s after the ball crosses the rim (up to ~2 s after a rim contact, while the
@@ -283,8 +286,10 @@ docs/labeling.md   how to label evaluation videos
    Next: film 2–3 fresh test sessions, ideally another gym or camera spot, with room above the rim
    ([filming checklist](docs/filming_checklist.md)), for a clean first-look number (both current
    test sets have been used).
-2. **iPhone app** ([Basketball-Shot-Tracker-App](https://github.com/NathanielRecto/Basketball-Shot-Tracker-App), Expo / React Native; tracker logic ported and verified identical, tap-the-hoop done): live camera, tap-the-hoop setup, real-time MADE / MISSED
-   calls on the phone, running FG%, offline use at the court.
+2. **iPhone app** ([Basketball-Shot-Tracker-App](https://github.com/NathanielRecto/Basketball-Shot-Tracker-App), Expo / React Native). Done: tracker logic
+   ported and verified identical to Python, hoop setup on the camera, a demo replay through the real tracker,
+   session summary, history with FG% trend, session types (FT / mid-range / threes / freestyle), light and dark
+   themes. Next: run detector v2 on the phone for live MADE / MISSED calls.
 3. Validate release / entry angles and pose metrics against ground truth.
 4. Layup / close-range shot mode.
 

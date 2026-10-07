@@ -16,6 +16,23 @@
     "final_train_loss": 2.794,
     "final_val_loss": 3.949
   },
+  "detector_v2_training": {
+    "epochs": 12,
+    "best_epoch": 12,
+    "patience": 5,
+    "batch": 2,
+    "imgsz": 960,
+    "model": "runs/detect/baseline/weights/best.pt",
+    "hours": 8.02,
+    "best": {
+      "mAP50": 0.851,
+      "mAP50-95": 0.433,
+      "precision": 0.871,
+      "recall": 0.823
+    },
+    "final_train_loss": 3.263,
+    "final_val_loss": 3.561
+  },
   "dev": {
     "labelled": 98,
     "found": 91,

@@ -4,7 +4,7 @@ docs/results_metrics.json.
 
     python scripts/make_report.py
 
-Inputs: runs/detect/baseline/ (Ultralytics training output), outputs/eval_final/ (tracker
+Inputs: runs/detect/baseline/ and runs/detect/combined_v1/ (Ultralytics training output, detector v1 and v2), outputs/eval_final/ (tracker
 predictions from run_eval_videos.py) and data/eval_videos/labels/ (hand labels).
 """
 import csv
@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from shottracker.evaluation import load_labels, load_predictions, match_shots, wilson_interval  # noqa: E402
 
 RUN = ROOT / "runs" / "detect" / "baseline"
+RUN_V2 = ROOT / "runs" / "detect" / "combined_v1"  # detector v2 (section 6)
 PRED = ROOT / "outputs" / "eval_final"
 LABELS = ROOT / "data" / "eval_videos" / "labels"
 META = ROOT / "data" / "eval_videos" / "listed_counts.csv"
@@ -53,8 +54,13 @@ def style():
 
 # ---- detector training -------------------------------------------------------------------
 
-def training(plt):
-    rows = list(csv.DictReader(open(RUN / "results.csv")))
+V1_FIGURES = {"curves": "training_curves.png", "pr": "detector_pr_curve.png", "f1": "detector_f1_curve.png",
+              "cm": "detector_confusion_matrix.png"}
+V2_FIGURES = {k: "detector_v2_" + v.replace("detector_", "") for k, v in V1_FIGURES.items()}
+
+
+def training(plt, run=RUN, names=V1_FIGURES):
+    rows = list(csv.DictReader(open(run / "results.csv")))
     ep = np.array([int(r["epoch"]) for r in rows])
     f = lambda k: np.array([float(r[k]) for r in rows])
     train_loss = f("train/box_loss") + f("train/cls_loss") + f("train/dfl_loss")
@@ -63,6 +69,7 @@ def training(plt):
                "precision": f("metrics/precision(B)"), "recall": f("metrics/recall(B)")}
     fitness = 0.1 * metrics["mAP50"] + 0.9 * metrics["mAP50-95"]  # Ultralytics' checkpoint criterion
     best = int(ep[np.argmax(fitness)])
+    u = ep[-1] / 30  # label spacing in epochs, laid out for the 30-epoch baseline
 
     fig, axes = plt.subplots(1, 2, figsize=(11, 3.8))
     ax = axes[0]
@@ -71,7 +78,7 @@ def training(plt):
         ax.annotate(name, (ep[-1], y[-1]), xytext=(6, 0), textcoords="offset points", va="center", color=INK2)
     ax.set_title("Loss per epoch (box + class + DFL)")
     ax.set_xlabel("epoch")
-    ax.set_xlim(1, ep[-1] + 6)
+    ax.set_xlim(1, ep[-1] + 6 * u)
     ax = axes[1]
     for (name, y), c in zip(metrics.items(), SERIES):
         ax.plot(ep, y, color=c, lw=2)
@@ -81,24 +88,23 @@ def training(plt):
     for yv, name, at_best in ends:
         ty = min(yv, placed[-1] - 0.06) if placed else yv
         placed.append(ty)
-        ax.annotate(f"{name} {at_best:.2f}", xy=(ep[-1], yv), xytext=(ep[-1] + 1.2, ty), textcoords="data",
+        ax.annotate(f"{name} {at_best:.2f}", xy=(ep[-1], yv), xytext=(ep[-1] + 1.2 * u, ty), textcoords="data",
                     va="center", color=INK2, arrowprops=dict(arrowstyle="-", color=GRID, lw=0.8))
     ax.axvline(best, color=MUTED, lw=1, ls="--")
     ax.text(best, 1.02, f"best epoch {best}", transform=ax.get_xaxis_transform(), ha="center", color=MUTED, fontsize=9)
     ax.set_title("Validation metrics per epoch")
     ax.set_xlabel("epoch")
     ax.set_ylim(0, 1)
-    ax.set_xlim(1, ep[-1] + 10)
+    ax.set_xlim(1, ep[-1] + 10 * u)
     fig.tight_layout()
-    fig.savefig(IMG / "training_curves.png", dpi=130)
+    fig.savefig(IMG / names["curves"], dpi=130)
     plt.close(fig)
 
-    for src, dst in (("BoxPR_curve.png", "detector_pr_curve.png"), ("BoxF1_curve.png", "detector_f1_curve.png"),
-                     ("confusion_matrix_normalized.png", "detector_confusion_matrix.png")):
-        shutil.copy(RUN / src, IMG / dst)
+    for src, key in (("BoxPR_curve.png", "pr"), ("BoxF1_curve.png", "f1"), ("confusion_matrix_normalized.png", "cm")):
+        shutil.copy(run / src, IMG / names[key])
 
     args = {}
-    for line in open(RUN / "args.yaml"):
+    for line in open(run / "args.yaml"):
         if ":" in line:
             k, v = line.split(":", 1)
             args[k.strip()] = v.strip()
@@ -231,7 +237,7 @@ def main():
     IMG.mkdir(parents=True, exist_ok=True)
     plt = style()
     rng = np.random.default_rng(0)
-    out = {"detector_training": training(plt)}
+    out = {"detector_training": training(plt), "detector_v2_training": training(plt, RUN_V2, V2_FIGURES)}
     results = {}
     for split in ("dev", "test"):
         cm, extra, pv = shot_level(split)

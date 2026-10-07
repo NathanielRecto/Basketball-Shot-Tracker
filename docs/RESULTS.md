@@ -41,6 +41,9 @@ the figures and numbers in sections 1–4 with `python scripts/make_report.py`
 
 ## 1. Detector training
 
+This section is the original detector (v1). The retrained detector v2 that the current system uses,
+with its own per-epoch curves, is in [section 6](#detector-v2).
+
 | Setting | Value |
 |---|---|
 | Model | YOLOv8s (11.1 M parameters), fine-tuned from COCO weights |
@@ -246,10 +249,41 @@ Fine-tuned from the original detector for 12 epochs (960 px, batch 2) on 8,347 i
 set plus 5,324 frames of [Basketball Detection v6](https://universe.roboflow.com/hooper-ibdsr/basketball-detection-v6)
 by Hooper (CC BY 4.0; phone video of gyms with many people on court; every 8th of 48,110 frames).
 Its hoop boxes cover the rim only, so they became a separate `rim_only` class the tracker ignores;
-its boxes around people were dropped (`scripts/build_combined_dataset.py`). Validation (880 held-out
-images, Hooper frames held out in whole 2,000-frame blocks): precision 0.871, recall 0.823, mAP50
-0.851 (ball 0.747, hoop 0.931, rim_only 0.876). Before retraining, the original detector found
-only 53 of 242 labelled balls in 300 random Hooper frames at 0.5 confidence.
+its boxes around people were dropped (`scripts/build_combined_dataset.py`). Before retraining, the
+original detector found only 53 of 242 labelled balls in 300 random Hooper frames at 0.5 confidence.
+
+| Setting | Value |
+|---|---|
+| Model | YOLOv8s, fine-tuned from detector v1 (`runs/detect/baseline/weights/best.pt`) |
+| Data | 8,347 train / 880 validation images (hotshot + Hooper), classes `ball`, `hoop`, `rim_only` |
+| Epochs | 12 (early-stopping patience 5, not triggered) |
+| Best epoch | **12**, the last one (same fitness criterion as section 1) |
+| Batch / image size | 2 / 960 px, mixed precision (batch 4 ran out of the GPU's 6 GB) |
+| Training time | 8.0 h on a GTX 1660 SUPER (6 GB) |
+
+![Detector v2 training curves](images/detector_v2_training_curves.png)
+
+* Both losses fall over all 12 epochs and validation loss never turns upward, so there is no sign
+  of overfitting.
+* The best epoch is the last one and validation mAP50-95 was still rising (0.35 to 0.43), so
+  training was stopped by time, not because the model had converged. More epochs would likely add
+  a little.
+
+Best-epoch validation metrics (880 images, Hooper frames held out in whole 2,000-frame blocks):
+
+| | Precision | Recall | mAP50 | mAP50-95 |
+|---|---|---|---|---|
+| All classes | 0.871 | 0.823 | 0.851 | 0.433 |
+| Ball | 0.865 | 0.637 | 0.747 | 0.441 |
+| Hoop (rim + net) | 0.883 | 0.982 | 0.931 | 0.390 |
+| Rim only | 0.867 | 0.850 | 0.876 | 0.466 |
+
+These are not comparable with section 1: the validation set is different and much harder (small,
+distant balls in busy gyms). What the change did to shot calls is in the re-tests below.
+
+| Precision-recall curve | F1 vs confidence | Confusion matrix (normalized) |
+|---|---|---|
+| ![PR curve](images/detector_v2_pr_curve.png) | ![F1 curve](images/detector_v2_f1_curve.png) | ![Detector v2 confusion matrix](images/detector_v2_confusion_matrix.png) |
 
 ### Frozen re-test: public test videos (103 shots)
 
