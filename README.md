@@ -12,8 +12,8 @@ NumPy, MediaPipe.
 videos (95% CI 69–85%), first look, original system. After retraining the detector on licensed
 phone footage of busy gyms and reworking the tracker, a **re-test of the frozen system** scores
 **92.2%** (95% CI 85–96%) on those same test videos and **78.2%** (95% CI 70–85%) on 119 shots
-from our **own, harder iPhone footage** (camera under the hoop, three people on court; 13.4%
-originally). Re-tests, because both sets had been scored before; nothing was tuned on them.
+from our **own, harder iPhone footage** (rim near the top of the frame, three people on court;
+13.4% originally). Re-tests, because both sets had been scored before; nothing was tuned on them.
 Details below.
 
 <p align="center">
@@ -51,7 +51,7 @@ the right tool here.
   <img src="docs/images/shot_confusion_matrix.png" width="820" alt="Confusion matrices of made / missed / not found for dev and test videos">
 </p>
 
-### Own iPhone footage (harder: camera under the hoop, three people on court)
+### Own iPhone footage (harder: rim near the top of the frame, three people on court)
 
 4 indoor sessions filmed with an iPhone 11 (1 dev, 3 test; 162 shots labelled blind, with shot
 type). The original tracker found only 1 in 5 shots: the detector fires on heads and legs, and the
@@ -252,8 +252,9 @@ the logic on the project's own simulator, not real-world accuracy.
 
 ## Assumptions and limits
 
-* Fixed camera, hoop in frame. Best from the side; a camera under the hoop facing the court is
-  harder (78.2% on re-test vs 92.2% on side-on video, see above). Angles are 2D projections.
+* Fixed camera, hoop in frame, filmed from the side. The whole arc should stay in view: in our own
+  footage the rim sits near the top edge, high shots leave the frame, and accuracy is lower (78.2% on
+  re-test vs 92.2% on the public videos, see above). Angles are 2D projections.
 * One ball in play. Jump shots and free throws: **layups, bank shots and tip-ins are not
   specifically handled**.
 * A call comes ~0.45 s after the ball crosses the rim (up to ~2 s after a rim contact, while the

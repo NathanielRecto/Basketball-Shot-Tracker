@@ -160,7 +160,8 @@ This measures the logic on the project's own simulator, not real-world accuracy.
 The 16 public videos above are mostly side-on views of one shooter. To test the system on the
 footage it is meant for, four indoor sessions were filmed with an iPhone 11 on a tripod
 (1080p, 60 fps, landscape): **three people taking turns** shooting free throws, mid-range shots
-and threes, with the camera on the **baseline beside the hoop, facing the court**. The raw
+and threes, with the camera on the **sideline**: hoop at the top left of the frame, shooters on the
+right, and the rim only about a fifth of the frame below the top edge. The raw
 videos are not published (other people appear in them).
 
 | Session | Split | Shots labelled (made) | FT / mid / 3PT | Notes |
@@ -186,7 +187,7 @@ but:
 1. **Persistent false "balls" on people.** The detector fires on heads (dark hair, caps), calf
    sleeves and hands at 0.6–0.8 confidence (the flat bands at y ≈ 700 and 840). The tracker
    followed a single target, so once it latched onto a head it never let go.
-2. **The ball vanishes near the apex.** From under the hoop, high arcs leave the top of the frame
+2. **The ball vanishes near the apex.** With the rim close to the top edge, high arcs leave the frame
    or are lost against the ceiling lights for ~0.5 s; the tracker then restarted on a leg.
 3. **Arcs barely clear the arm line.** The camera is low and close, so the hoop box is tall and
    many arcs peak just above the rim: half a hoop-height above it was too strict.
@@ -323,8 +324,8 @@ Replays with the new detector at 960 px:
 | Tracker v2 | 89.8% | 86.0% |
 | v2 without switching / top-exit wait / lower arm line | 89.8% / 89.8% / 89.8% | 74.4% / 76.7% / 79.1% |
 
-On side-on footage the changes alter nothing (the same shots right and wrong); on footage from
-under the hoop each adds 7–12 points. An earlier comparison that suggested tracker v2 lost 5 points
+On the public dev videos the changes alter nothing (the same shots right and wrong); on our own
+footage (rim near the top edge, people on court) each adds 7–12 points. An earlier comparison that suggested tracker v2 lost 5 points
 on the old videos had run those portrait videos at 960 px instead of 1280 px; run settings are now
 saved per run and `compare_runs.py` warns when they differ.
 
