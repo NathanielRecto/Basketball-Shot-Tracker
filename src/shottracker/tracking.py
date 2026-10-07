@@ -139,14 +139,29 @@ class BallTracker:
         """The track was rising fast enough to be above the top of the frame within ``exit_horizon_s``."""
         return self._vy < 0 and last.y + self._vy * self.exit_horizon_s < 0
 
-    def _reacquire(self, t: float, last: BallObs, balls: Sequence[Detection]) -> Optional[Detection]:
-        """A detection where a ball that left through the top edge would come back into view."""
+    def _reacquire(self, t: float, last: BallObs, balls: Sequence[Detection], hoop: Optional[Box] = None) -> Optional[Detection]:
+        """A detection where a ball that left through the top edge would come back into view.
+
+        The constant-velocity guess overshoots when the ball flies away from the camera: perspective
+        slows it on screen while it is out of view (own session 2: predicted 400-900 px past where it
+        came back). A ball heading for the hoop comes back down over it, so with a hoop the search
+        also covers everything between the exit point and one hoop-width beyond the hoop.
+        """
         dt = t - last.t
         diam = max(last.diameter, 12.0)
         px = last.x + self._vx * dt
         tol_x = max(4 * diam, 0.3 * abs(self._vx) * dt)
+
+        def near(x: float) -> bool:
+            if abs(x - px) <= tol_x:
+                return True
+            if hoop is None or (hoop.cx - last.x) * self._vx <= 0:  # no hoop, or not heading towards it
+                return False
+            lo, hi = (hoop.x1 - hoop.w, last.x) if hoop.cx < last.x else (last.x, hoop.x2 + hoop.w)
+            return lo <= x <= hi
+
         # It comes back in from above, so it reappears no lower than where it was lost.
-        cands = [d for d in balls if abs(d.box.cx - px) <= tol_x and d.box.cy <= last.y + diam]
+        cands = [d for d in balls if near(d.box.cx) and d.box.cy <= last.y + diam]
         return min(cands, key=lambda d: abs(d.box.cx - px)) if cands else None
 
     def _gate(self, x: float, y: float, d: float, vx: float, vy: float, dt: float) -> tuple:
@@ -198,7 +213,7 @@ class BallTracker:
                         return d
         return None
 
-    def update(self, t: float, detections: Sequence[Detection]) -> Optional[BallObs]:
+    def update(self, t: float, detections: Sequence[Detection], hoop: Optional[Box] = None) -> Optional[BallObs]:
         self.switched = False
         balls = [d for d in detections if d.label == "ball"]
         while self._recent and t - self._recent[0][0] > self.confirm_s:
@@ -207,7 +222,7 @@ class BallTracker:
             return None
         last = self._last
         if last is not None and self.lost_s < t - last.t <= self.exit_wait_s and self._exited_top(last):
-            back = self._reacquire(t, last, balls)
+            back = self._reacquire(t, last, balls, hoop)
             if back is None:
                 return None
             self._vy = 0.0  # it is coming down now; the gate re-learns the speed

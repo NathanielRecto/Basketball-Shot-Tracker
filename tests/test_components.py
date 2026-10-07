@@ -220,3 +220,39 @@ def test_shot_logic_does_not_give_up_on_a_ball_above_the_frame():
     for k in range(1, 25):  # 0.8 s with no ball: longer than lost_s, shorter than top_exit_wait_s
         sd.update(7 / fps + k / fps, None, hoop)
     assert not any(m.startswith("abort") for _, m in sd.log)
+
+
+def test_tracker_finds_a_ball_coming_back_down_over_the_hoop_after_it_slowed_out_of_view():
+    # Own session 2: shot from near the camera, the ball flies away from it, so on screen it slows
+    # down while above the frame and comes back far short of the constant-velocity guess.
+    hoop = Box(500, 300, 620, 460)
+    for with_hoop, expect in ((False, None), (True, (650, 30))):
+        tr = BallTracker()
+        fps = 30
+        for i in range(10):  # leaving through the top at 1500 px/s sideways
+            obs = tr.update(i / fps, [_ball(1700 - 50 * i, 400 - 40 * i)], hoop if with_hoop else None)
+        assert obs is not None and obs.y < 50
+        t = 10 / fps
+        for k in range(30):  # 1 s out of view; a leg "ball" is the only detection
+            tr.update(t + k / fps, [_ball(1400, 850, conf=0.8)], hoop if with_hoop else None)
+        back = tr.update(t + 30 / fps, [_ball(1400, 850, conf=0.8), _ball(650, 30, conf=0.5)], hoop if with_hoop else None)
+        got = None if back is None else (round(back.x), round(back.y))
+        assert got == expect
+
+
+def test_shot_logic_judges_an_arc_that_was_above_the_frame_as_one_flight():
+    from shottracker.shot_logic import ShotDetector
+    from shottracker.types import BallObs
+
+    hoop = Box(500, 300, 620, 460)  # rim line at y = 324
+    sd = ShotDetector()
+    fps = 30
+    x = lambda t: 900 - 341 * t  # noqa: E731  reaches the hoop centre at the rim line
+    y = lambda t: 330 - 2000 * t + 2000 * t * t  # noqa: E731  apex 170 px above the frame, out of view 0.58 s
+    events = []
+    for k in range(60):
+        t = k / fps
+        seen = y(t) >= 0 and k <= 31  # after the rim line it disappears into the net
+        events += sd.update(t, BallObs(t, x(t), y(t), 30) if seen else None, hoop)
+    assert not any(m.startswith("abort") or "rim_bounce" in m for _, m in sd.log), sd.log
+    assert [e.outcome for e in events] == [Outcome.MADE]

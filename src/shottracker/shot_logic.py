@@ -40,6 +40,14 @@ class _State(Enum):
     RATTLE = 3  # ball hit the rim; waiting to see where it ends up
 
 
+def _rising_out_of_top(a: BallObs, b: BallObs) -> bool:
+    """a -> b rises fast enough to be above the top of the frame within 0.3 s."""
+    if b.t <= a.t:
+        return False
+    vy = (b.y - a.y) / (b.t - a.t)
+    return vy < 0 and b.y + vy * 0.3 < 0
+
+
 class _Pending:
     def __init__(self, **kw):
         self.__dict__.update(kw)
@@ -97,11 +105,14 @@ class ShotDetector:
         """The last two observations were rising fast enough to be above the frame within 0.3 s."""
         if len(self._buf) < 2:
             return False
-        a, b = self._buf[-2], self._buf[-1]
-        if b.t <= a.t:
-            return False
-        vy = (b.y - a.y) / (b.t - a.t)
-        return vy < 0 and b.y + vy * 0.3 < 0
+        return _rising_out_of_top(self._buf[-2], self._buf[-1])
+
+    def _back_from_top(self, a: BallObs, b: BallObs, c: BallObs) -> bool:
+        """a -> b left through the top edge and c, after a gap a high arc explains, is back above the rim.
+
+        Such a gap is one flight, not two: the ball was only out of view above the frame.
+        """
+        return _rising_out_of_top(a, b) and c.t - b.t <= self.cfg.top_exit_wait_s and c.y < self._rim_y()
 
     def _rim_y(self) -> float:
         h = self._hoop
@@ -125,7 +136,8 @@ class ShotDetector:
         cfg, h = self.cfg, self._hoop
         pts = list(self._buf)[:-1] if exclude_last else list(self._buf)
         start = len(pts) - 1
-        while start > 0 and pts[start].t - pts[start - 1].t <= cfg.gap_max_s:
+        while start > 0 and (pts[start].t - pts[start - 1].t <= cfg.gap_max_s
+                             or (start >= 2 and self._back_from_top(pts[start - 2], pts[start - 1], pts[start]))):
             start -= 1
         seg = pts[start:]
         apex = min(range(len(seg)), key=lambda i: seg[i].y)
@@ -206,7 +218,8 @@ class ShotDetector:
             prev = self._buf[-2]
             if prev.y < rim_y <= ball.y:
                 return self._cross(t, prev, ball)
-            if ball.t - prev.t > cfg.interp_max_gap_s and ball.y < rim_y - cfg.reentry_margin * h.h:
+            came_down = len(self._buf) >= 3 and self._back_from_top(self._buf[-3], prev, ball)
+            if ball.t - prev.t > cfg.interp_max_gap_s and ball.y < rim_y - cfg.reentry_margin * h.h and not came_down:
                 ev = self._reappeared_above(t, ball)
                 if ev:
                     return ev

@@ -343,3 +343,53 @@ Frame rate barely matters, and landscape footage holds at 640 px; portrait video
 960 px. Target for the app: landscape filming, 960 px at 20–30 fps, with 640 px at 30 fps as the
 fallback. Speed on the iPhone itself is not yet measured. Differences of 2–3 points here are one or
 two shots.
+
+## 7. Balls that leave through the top of the frame (dev, October 2026)
+
+**Sessions 2–4 are no longer test data.** They had been scored twice (sections 5 and 6), so they could
+not give a clean first-look number anymore, and their failures are worth studying. From here on all
+four own sessions are dev footage; the next test number comes from newly filmed sessions, scored once.
+
+### What went wrong in session 2
+
+Session 2 held 14 of the 16 shots the current system never found. In 11 of them the ball left
+through the top of the frame (the rim sits only about a fifth of the frame below the top edge) and
+was out of view for 0.8–1.2 s:
+
+* **8 shots (all the mid-range shots between 73 and 119 s): the tracker never took the ball back.**
+  They were shot close to the camera (ball about 100 px wide when it left the frame, against about
+  50 px on free throws), so the ball flew away from the camera and, by perspective, slowed down on
+  screen while out of view: 1,000–1,800 px/s sideways when it left, 800–970 px/s on average while
+  hidden. The constant-velocity guess put the re-entry 400–900 px past where the ball actually came
+  back down, right over the hoop, so the tracker ignored it and only picked the ball up again near
+  the floor.
+* **3 shots: the tracker took the ball back, but the shot logic only saw the falling half.** It
+  judges the latest continuous run of observations, and the first points after re-entry are a ball
+  cut off by the top edge (box centre too low), so the short fall looked "not parabolic".
+
+### The fixes
+
+* **Tracker:** when a ball that left through the top was heading for the hoop, the search for it
+  also covers everything between the exit point and one hoop-width past the hoop. The pipeline now
+  works out the hoop before tracking, so the tracker can use it.
+* **Shot logic:** a gap that starts with the ball rising out through the top and ends with it back
+  above the rim (within `top_exit_wait_s`) is one flight, so the fit sees the whole arc. A ball
+  coming back down from above the frame is no longer read as "came back up off the rim".
+
+### Results (replays of saved detections, detector v2, 960 px)
+
+| | Before | After |
+|---|---|---|
+| Session 2 | 58.5% (25 of 41 shots found) | **82.9%** (39 of 41 found) |
+| Sessions 1, 3, 4 | 86.0% / 84.6% / 89.7% | identical (same shots right and wrong) |
+| **All own sessions (162 shots)** | 79.6% (95% CI 73–85%), recall 89.5% | **85.8% (80–90%)**, recall 98.1% |
+| Public dev videos (98 shots, 1280 px) | 94.9% | 94.9% (identical) |
+
+These are dev numbers: the fixes were designed by looking at session 2.
+
+### What is left
+
+Finding shots is no longer the main problem; calling them is. Of the 23 errors left on own footage,
+20 are wrong made/missed calls: 12 misses called made (some bounce off the back of the rim and fall
+away at net height, moving back towards the shooter) and 8 makes called "fell past the rim" by the
+net-braking check. That is the next thing to work on.
