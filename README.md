@@ -283,7 +283,7 @@ docs/labeling.md   how to label evaluation videos
    Next: film 2–3 fresh test sessions, ideally another gym or camera spot, with room above the rim
    ([filming checklist](docs/filming_checklist.md)), for a clean first-look number (both current
    test sets have been used).
-2. **iPhone app** (Expo / React Native): live camera, tap-the-hoop setup, real-time MADE / MISSED
+2. **iPhone app** ([Basketball-Shot-Tracker-App](https://github.com/NathanielRecto/Basketball-Shot-Tracker-App), Expo / React Native; tracker logic ported and verified identical, tap-the-hoop done): live camera, tap-the-hoop setup, real-time MADE / MISSED
    calls on the phone, running FG%, offline use at the court.
 3. Validate release / entry angles and pose metrics against ground truth.
 4. Layup / close-range shot mode.

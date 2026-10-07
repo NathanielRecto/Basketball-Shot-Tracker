@@ -29,7 +29,7 @@ from enum import Enum
 from typing import Deque, List, Optional, Tuple
 
 from .config import ShotConfig
-from .geometry import Box, FlightFit, fit_flight
+from .geometry import Box, FlightFit, dist, fit_flight
 from .types import BallObs, Outcome, ShotEvent
 
 
@@ -135,7 +135,7 @@ class ShotDetector:
             a, b = seg[j - 1], seg[j]
             if a.y < b.y - tol:  # it was higher earlier, so this motion began later
                 break
-            if math.hypot(b.x - a.x, b.y - a.y) < still:  # held, not flying
+            if dist(b.x - a.x, b.y - a.y) < still:  # held, not flying
                 break
             j -= 1
         return seg[j:]
@@ -156,7 +156,7 @@ class ShotDetector:
         max_drop, dropped = len(pts) // 2, 0
         while fit is not None and (fit.rms > trim or not fit.is_physical) and len(pts) > self.cfg.min_fit_points and dropped < max_drop:
             f = fit
-            worst = max(range(len(pts)), key=lambda i: math.hypot(pts[i][1] - f.x_at(pts[i][0]), pts[i][2] - f.y_at(pts[i][0])))
+            worst = max(range(len(pts)), key=lambda i: dist(pts[i][1] - f.x_at(pts[i][0]), pts[i][2] - f.y_at(pts[i][0])))
             pts.pop(worst)
             dropped += 1
             fit = fit_flight(pts, self.cfg.min_fit_points)
@@ -378,10 +378,18 @@ class ShotDetector:
         """Least-squares downward speed of (t, y) points, in hoop heights per second."""
         if len(pts) < 2:
             return None
-        mt = sum(q[0] for q in pts) / len(pts)
-        my = sum(q[1] for q in pts) / len(pts)
-        den = sum((q[0] - mt) ** 2 for q in pts)
-        return None if den == 0 else sum((q[0] - mt) * (q[1] - my) for q in pts) / den / self._hoop.h
+        # Plain loops, not sum() / ** 2: the phone app's port must reproduce these bits exactly.
+        st = sy = 0.0
+        for q in pts:
+            st += q[0]
+            sy += q[1]
+        mt, my = st / len(pts), sy / len(pts)
+        den = num = 0.0
+        for q in pts:
+            dt = q[0] - mt
+            den += dt * dt
+            num += dt * (q[1] - my)
+        return None if den == 0 else num / den / self._hoop.h
 
     def _fell_past_rim(self, p: _Pending) -> bool:
         """True when the ball is clearly seen falling after the crossing without being braked.

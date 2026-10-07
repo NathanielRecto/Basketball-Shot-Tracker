@@ -1,5 +1,8 @@
 # Porting the tracker to the phone app
 
+The app lives in its own repo: [Basketball-Shot-Tracker-App](https://github.com/NathanielRecto/Basketball-Shot-Tracker-App)
+(Expo / React Native, TypeScript; port in `src/shottracker/`, comparison in `tests/golden.test.ts`).
+
 The phone app re-implements the static filter, ball tracker and shot judge (`src/shottracker/tracking.py`,
 `shot_logic.py`, `pipeline.py`) in its own language. This repo stays the reference: changes are made and
 measured here first, then copied to the app. To keep the two identical, this repo exports **settings** and
@@ -54,6 +57,15 @@ compare at every frame. Expected numbers are written at full double precision an
 doubles, so compare **exactly**; when a value differs, the port's arithmetic differs (often an operation in
 a different order), so fix the port rather than loosening the test. `scripts/export_app_fixtures.py` itself
 refuses to write a case that this Python code cannot replay identically after a JSON round trip.
+
+## Code rules that make exact matching possible
+
+The tracking and judging code here avoids anything another language cannot reproduce bit for bit: the arc
+fit is plain least squares (sums in sample order, Cramer's rule) instead of `numpy.polyfit`, distances use
+`geometry.dist` (`sqrt(dx*dx + dy*dy)`) instead of `math.hypot`, and sums are explicit loops instead of
+`sum()` (which changes its algorithm in Python 3.12) and `** 2`. Switching to these changed none of the
+751 shot calls on the dev footage. Keep to them when editing `geometry.py`, `tracking.py` or
+`shot_logic.py`; the app repo's `docs/porting.md` lists the same rules from the other side.
 
 ## Data rules
 

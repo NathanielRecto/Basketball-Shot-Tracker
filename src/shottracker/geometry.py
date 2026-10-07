@@ -6,7 +6,6 @@ means a smaller y.
 from __future__ import annotations
 
 import math
-import warnings
 from dataclasses import dataclass
 from typing import Optional, Sequence, Tuple
 
@@ -93,28 +92,59 @@ class FlightFit:
         return self.t0 + (-c1 + math.sqrt(disc)) / (2 * c2)
 
 
+def dist(dx: float, dy: float) -> float:
+    """Length of (dx, dy), spelled out as sqrt(dx*dx + dy*dy) so another language computes the same bits.
+
+    ``math.hypot`` is more careful but rounds differently from JavaScript's ``Math.hypot``, and the phone
+    app's port must reproduce this code exactly (docs/app_port.md).
+    """
+    return math.sqrt(dx * dx + dy * dy)
+
+
+def _det3(a: float, b: float, c: float, d: float, e: float, f: float, g: float, h: float, i: float) -> float:
+    return a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g)
+
+
 def fit_flight(samples: Sequence[Sample], min_points: int = 4) -> Optional[FlightFit]:
+    """Least-squares x(tau) = a*tau + b and y(tau) = c2*tau^2 + c1*tau + c0, with tau = t - t0.
+
+    Solved from the normal equations with plain sums in sample order and Cramer's rule, so the phone
+    app's port can reproduce it bit for bit (numpy's polyfit cannot be copied exactly). Over the short,
+    well-spread time spans of a shot this agrees with polyfit to far below a pixel.
+    """
     if len(samples) < min_points:
         return None
-    arr = np.asarray(samples, dtype=float)
-    t0 = float(arr[0, 0])
-    tau = arr[:, 0] - t0
-    if tau[-1] - tau[0] <= 0:
+    t0 = float(samples[0][0])
+    pts = [(float(s[0]) - t0, float(s[1]), float(s[2])) for s in samples]
+    if pts[-1][0] - pts[0][0] <= 0:
         return None
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        try:
-            xp = np.polyfit(tau, arr[:, 1], 1)
-            yp = np.polyfit(tau, arr[:, 2], 2)
-        except (np.linalg.LinAlgError, ValueError):
-            return None
-    if not (np.all(np.isfinite(xp)) and np.all(np.isfinite(yp))):
+    n = len(pts)
+    s1 = s2 = s3 = s4 = sx = stx = sy = sty = stty = 0.0
+    for tau, x, y in pts:
+        t2 = tau * tau
+        s1 += tau
+        s2 += t2
+        s3 += t2 * tau
+        s4 += t2 * t2
+        sx += x
+        stx += tau * x
+        sy += y
+        sty += tau * y
+        stty += t2 * y
+    den = n * s2 - s1 * s1
+    det = _det3(s4, s3, s2, s3, s2, s1, s2, s1, n)
+    if den == 0 or det == 0:
         return None
-    resid = np.hypot(arr[:, 1] - np.polyval(xp, tau), arr[:, 2] - np.polyval(yp, tau))
-    return FlightFit(
-        t0=t0,
-        x_poly=(float(xp[0]), float(xp[1])),
-        y_poly=(float(yp[0]), float(yp[1]), float(yp[2])),
-        rms=float(np.sqrt(np.mean(resid ** 2))),
-        n=len(arr),
-    )
+    a = (n * stx - s1 * sx) / den
+    b = (sx - a * s1) / n
+    c2 = _det3(stty, s3, s2, sty, s2, s1, sy, s1, n) / det
+    c1 = _det3(s4, stty, s2, s3, sty, s1, s2, sy, n) / det
+    c0 = _det3(s4, s3, stty, s3, s2, sty, s2, s1, sy) / det
+    if not all(math.isfinite(v) for v in (a, b, c2, c1, c0)):
+        return None
+    sq = 0.0
+    for tau, x, y in pts:
+        ex = x - (a * tau + b)
+        ey = y - ((c2 * tau + c1) * tau + c0)
+        sq += ex * ex + ey * ey
+    return FlightFit(t0=t0, x_poly=(a, b), y_poly=(c2, c1, c0), rms=math.sqrt(sq / n), n=n)

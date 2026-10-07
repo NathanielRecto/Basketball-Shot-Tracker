@@ -7,7 +7,7 @@ from typing import Deque, List, Optional, Sequence
 
 import numpy as np
 
-from .geometry import Box
+from .geometry import Box, dist
 from .types import BallObs, Detection
 
 
@@ -81,7 +81,7 @@ class _Tracklet:
 
     def speed(self) -> float:
         """Ball diameters per second."""
-        return math.hypot(self.vx, self.vy) / max(self.d, 12.0)
+        return dist(self.vx, self.vy) / max(self.d, 12.0)
 
 
 class BallTracker:
@@ -152,7 +152,7 @@ class BallTracker:
     def _gate(self, x: float, y: float, d: float, vx: float, vy: float, dt: float) -> tuple:
         """(predicted x, predicted y, gate radius) for a constant-velocity track."""
         diam = max(d, 12.0)
-        gate = max(self.min_gate_px, self.gate_diams * diam) + 0.5 * math.hypot(vx, vy) * dt
+        gate = max(self.min_gate_px, self.gate_diams * diam) + 0.5 * dist(vx, vy) * dt
         return x + vx * dt, y + vy * dt, gate
 
     def _update_side(self, t: float, balls: Sequence[Detection]) -> None:
@@ -163,9 +163,9 @@ class BallTracker:
         for ki, k in enumerate(self._side):
             px, py, gate = self._gate(k.x, k.y, k.d, k.vx, k.vy, t - k.t)
             for di, d in enumerate(free):
-                dist = math.hypot(d.box.cx - px, d.box.cy - py)
-                if dist <= gate:
-                    pairs.append((dist, ki, di))
+                gap = dist(d.box.cx - px, d.box.cy - py)
+                if gap <= gate:
+                    pairs.append((gap, ki, di))
         used_k, used_d = set(), set()
         for _, ki, di in sorted(pairs):
             if ki not in used_k and di not in used_d:
@@ -181,7 +181,7 @@ class BallTracker:
         best = None
         for k in self._side:
             sp = k.speed()
-            if (k.t == t and k.hits >= self.switch_hits and sp >= self.switch_speed and -k.vy >= self.switch_min_up * math.hypot(k.vx, k.vy)
+            if (k.t == t and k.hits >= self.switch_hits and sp >= self.switch_speed and -k.vy >= self.switch_min_up * dist(k.vx, k.vy)
                     and main_speed < self.switch_ratio * sp and (best is None or sp > best.speed())):
                 best = k
         return best
@@ -192,8 +192,8 @@ class BallTracker:
             for pt, px, py in self._recent:
                 dt = t - pt
                 if 0 < dt <= self.confirm_s:
-                    dist = math.hypot(d.box.cx - px, d.box.cy - py)
-                    if self.min_move * size <= dist <= self.max_speed * size * dt:
+                    gap = dist(d.box.cx - px, d.box.cy - py)
+                    if self.min_move * size <= gap <= self.max_speed * size * dt:
                         self._vx, self._vy = (d.box.cx - px) / dt, (d.box.cy - py) / dt
                         return d
         return None
@@ -230,12 +230,12 @@ class BallTracker:
             diam = max(last.diameter, 12.0)
             scored = []
             for d in balls:
-                dist = math.hypot(d.box.cx - px, d.box.cy - py)
-                if dist <= gate:
-                    scored.append((d.conf / (1.0 + dist / diam), d))
+                gap = dist(d.box.cx - px, d.box.cy - py)
+                if gap <= gate:
+                    scored.append((d.conf / (1.0 + gap / diam), d))
             best = max(scored, key=lambda s: s[0])[1] if scored else None
             self._update_side(t, [d for d in balls if d is not best])
-            riser = self._riser(t, math.hypot(self._vx, self._vy) / diam)
+            riser = self._riser(t, dist(self._vx, self._vy) / diam)
             if riser is not None:
                 self._side.remove(riser)
                 if best is not None:  # the old target becomes a side track
