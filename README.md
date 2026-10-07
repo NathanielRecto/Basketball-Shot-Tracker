@@ -8,8 +8,13 @@ Computer-vision system that watches basketball video from a fixed phone camera, 
 shot and calls it **made or missed**, with release and entry angles. Python, YOLOv8, OpenCV,
 NumPy, MediaPipe.
 
-**Held-out test accuracy: 77.7%** end-to-end on 103 hand-labelled shots (95% CI 69–85%).
-When a shot is found, the make/miss call is right **94%** of the time.
+**Held-out test accuracy: 77.7%** end-to-end on 103 hand-labelled shots from 16 public phone
+videos (95% CI 69–85%), first look, original system. After retraining the detector on licensed
+phone footage of busy gyms and reworking the tracker, a **re-test of the frozen system** scores
+**92.2%** (95% CI 85–96%) on those same test videos and **78.2%** (95% CI 70–85%) on 119 shots
+from our **own, harder iPhone footage** (camera under the hoop, three people on court; 13.4%
+originally). Re-tests, because both sets had been scored before; nothing was tuned on them.
+Details below.
 
 <p align="center">
   <img src="docs/images/demo_synthetic.gif" width="640" alt="Pipeline running on simulated shots: ball trace, hoop box, MADE/MISSED calls">
@@ -45,15 +50,42 @@ the right tool here.
   <img src="docs/images/shot_confusion_matrix.png" width="820" alt="Confusion matrices of made / missed / not found for dev and test videos">
 </p>
 
+### Own iPhone footage (harder: camera under the hoop, three people on court)
+
+4 indoor sessions filmed with an iPhone 11 (1 dev, 3 test; 162 shots labelled blind, with shot
+type). The original tracker found only 1 in 5 shots: the detector fires on heads and legs, and the
+single-target tracker locked onto them. **Tracker v2** (tuned on the dev session only) follows
+side tracks and switches to a fast-rising one, and waits for a ball that left through the top of
+the frame.
+
+**Detector v2** was then fine-tuned on 5,324 extra frames of phone video from gyms with many
+people on court ([Basketball Detection v6](https://universe.roboflow.com/hooper-ibdsr/basketball-detection-v6),
+CC BY 4.0), so heads and legs stop looking like balls.
+
+| Test sessions 2–4 (119 shots) | Old detector, old tracker | Old detector, tracker v2 | **Current system** |
+|---|---|---|---|
+| End-to-end accuracy (95% CI) | 13.4% (8–21%) | 37.8% (30–47%) | **78.2% (70–85%)** |
+| Shot detection precision / recall | 95.7% / 18.5% | 100% / 44.5% | **98.1% / 86.6%** |
+| Make/miss accuracy on found shots | 72.7% | 84.9% | **90.3%** |
+| Free throws / mid-range / threes | | 60% / 39% / 22% | **77% / 71% / 87%** |
+
+The current system on the public test videos: **92.2%** end-to-end (was 77.7%), outdoor 90.2%
+(was 66.7%). Both are re-tests of a frozen system (see above). On development footage, accuracy
+holds at 20 frames per second and, for landscape video, at 640 px input: the target for the
+phone app. Full write-up: [docs/RESULTS.md §5–6](docs/RESULTS.md#6-current-system-retrained-detector--tracker-v2-october-2026).
+
 ## Data splits
 
-Two separate datasets, never mixed: the detector was **not** trained on any of the 16
+Separate datasets, never mixed: the detector was **not** trained on any of the 16
 evaluation videos.
 
 | Data | Used for | Split | How it was split |
 |---|---|---|---|
 | **"hotshot" detector dataset** (3,625 images, CC BY 4.0) | Training the ball/hoop detector | 3,023 train / 190 validation / 412 test images | The dataset publisher's own split (Roboflow export), not ours. Its test images come from the same source videos as its training images, so its test mAP (0.970) is inflated; the validation numbers are the honest detector metrics |
+| **"Basketball Detection v6" by Hooper** (48,110 images, CC BY 4.0) | Retraining the detector (v2): phone video of gyms with many people | Every 8th frame: 5,324 train / 690 validation | Ours: validation = whole blocks of 2,000 consecutive frames, so near-identical neighbours never land on both sides. Rim-only hoop boxes kept as a separate class |
 | **16 phone videos** (201 hand-labelled shots) | Measuring the whole system's make/miss accuracy | **Dev** (98 shots): videos 1, 4, 5, 8, 9, 12, 13, 16<br>**Test** (103 shots): videos 2, 3, 6, 7, 10, 11, 14, 15 | By **whole video** (frames of one video never land on both sides), fixed before any tuning, balanced so each half has one video of every setup (indoor/outdoor × ground/tripod camera × free throw/three-pointer). Dev for debugging and tuning; test scored once at the end |
+
+| **Own iPhone sessions** (162 hand-labelled shots) | Measuring the system on our own footage | **Dev** (43 shots): session 1<br>**Test** (119 shots): sessions 2, 3, 4 | By whole session, fixed before any tuning; session 1 (two balls in play at times) is dev. Videos not published |
 
 Per-video details: [docs/RESULTS.md](docs/RESULTS.md#data-splits).
 
@@ -167,11 +199,18 @@ wrongly called shot with its timestamp.
 | `scripts/replay_eval.py --errors` | Scores the current code against labels in seconds, with context for each error |
 | `scripts/replay_all.py` | Compares settings across videos; flags shots that match no visible arc |
 | `scripts/eval_synthetic.py` | Stress-tests the judging logic on simulated shots with noise and missed detections |
-| `scripts/make_report.py` | Rebuilds every figure and metric in `docs/RESULTS.md` |
+| `scripts/compare_runs.py` | Scores several runs (e.g. old vs new tracker or detector) on the same labelled shots, side by side |
+| `scripts/make_report.py` | Rebuilds every figure and metric in `docs/RESULTS.md` (sections 1–4) |
 
 ## More detail
 
-### Detector (baseline yolov8s, 30 epochs on the CC BY 4.0 "hotshot" dataset)
+### Detector
+
+**Current (v2):** fine-tuned from the baseline for 12 epochs at 960 px on hotshot + 5,324 Hooper
+frames (`scripts/build_combined_dataset.py`); validation mAP50 0.851 (ball 0.747, hoop 0.931) on
+880 held-out images. Details: [docs/RESULTS.md §6](docs/RESULTS.md#detector-v2).
+
+**Baseline (v1)**, yolov8s, 30 epochs on the CC BY 4.0 "hotshot" dataset:
 
 | Split | mAP50 | mAP50-95 | Note |
 |---|---|---|---|
@@ -209,7 +248,8 @@ the logic on the project's own simulator, not real-world accuracy.
 
 ## Assumptions and limits
 
-* Fixed camera, roughly side-on, hoop in frame. Angles are 2D projections.
+* Fixed camera, hoop in frame. Best from the side; a camera under the hoop facing the court works
+  much worse so far (37.8%, see above). Angles are 2D projections.
 * One ball in play. Jump shots and free throws: **layups, bank shots and tip-ins are not
   specifically handled**.
 * A call comes ~0.45 s after the ball crosses the rim (up to ~2 s after a rim contact, while the
@@ -232,15 +272,16 @@ src/shottracker/
   pipeline.py      glue              render.py / video.py / cli.py
   sim.py           simulated shots for tests and the demo
 scripts/           training, labelling, hoop marking, evaluation, debugging
-tests/             77 tests
+tests/             87 tests
 docs/labeling.md   how to label evaluation videos
 ```
 
 ## Roadmap
 
-1. **Own footage**: film sessions (indoor and outdoor) with an iPhone on a tripod
-   ([filming checklist](docs/filming_checklist.md)), fine-tune the detector, and measure on **new**
-   held-out sessions (the current test set has been used).
+1. **Own footage** (in progress): 4 indoor sessions filmed and scored, detector retrained (above).
+   Next: film 2–3 fresh test sessions, ideally another gym or camera spot, with room above the rim
+   ([filming checklist](docs/filming_checklist.md)), for a clean first-look number (both current
+   test sets have been used).
 2. **iPhone app** (Expo / React Native): live camera, tap-the-hoop setup, real-time MADE / MISSED
    calls on the phone, running FG%, offline use at the court.
 3. Validate release / entry angles and pose metrics against ground truth.

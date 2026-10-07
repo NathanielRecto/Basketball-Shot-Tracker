@@ -61,6 +61,29 @@ class StaticSuppressor:
         return out
 
 
+class _Tracklet:
+    """A short side track for a detection the main track did not take (see BallTracker)."""
+
+    __slots__ = ("t", "x", "y", "d", "vx", "vy", "hits")
+
+    def __init__(self, t: float, x: float, y: float, d: float):
+        self.t, self.x, self.y, self.d = t, x, y, d
+        self.vx = self.vy = 0.0
+        self.hits = 1
+
+    def step(self, t: float, x: float, y: float, d: float) -> None:
+        dt = t - self.t
+        nvx, nvy = (x - self.x) / dt, (y - self.y) / dt
+        a = 1.0 if self.hits == 1 else 0.6
+        self.vx, self.vy = a * nvx + (1 - a) * self.vx, a * nvy + (1 - a) * self.vy
+        self.t, self.x, self.y, self.d = t, x, y, d
+        self.hits += 1
+
+    def speed(self) -> float:
+        """Ball diameters per second."""
+        return math.hypot(self.vx, self.vy) / max(self.d, 12.0)
+
+
 class BallTracker:
     """Follows the single ball in play with a constant-velocity gate.
 
@@ -71,10 +94,26 @@ class BallTracker:
     track right away; a weaker one only does when it is confirmed by motion, i.e. a detection
     in a recent frame between ``min_move`` and ``max_speed`` ball-diameters away. In flight the
     ball is often only weakly detected; static false positives never move.
+
+    Switching: false positives that move a little (heads, legs, hands when people stand around
+    the hoop) are detected in nearly every frame, so a track that locked onto one would never
+    be lost and never let go. Detections the main track does not take are therefore followed
+    as short side tracks; when one has risen fast for ``switch_hits`` frames (a released shot:
+    at least ``switch_speed`` diameters/s, mostly upward) while the main track moves at under
+    ``switch_ratio`` of that speed, the main track jumps to it. ``switched`` is True on the
+    frame where that happened, so the shot logic can drop the history of the old target.
+
+    Leaving the top of the frame: a high shot is often out of view (or lost against ceiling
+    lights) around its apex for longer than ``lost_s``. When the track was heading up fast
+    enough to be above the frame by now, it waits up to ``exit_wait_s`` for the ball to come
+    back down near where it left (horizontally) instead of starting over on whatever is
+    detected meanwhile.
     """
 
     def __init__(self, init_conf: float = 0.4, lost_s: float = 0.5, gate_diams: float = 2.5, min_gate_px: float = 25.0,
-                 confirm_s: float = 0.15, min_move: float = 0.3, max_speed: float = 120.0):
+                 confirm_s: float = 0.15, min_move: float = 0.3, max_speed: float = 120.0,
+                 switch_speed: float = 12.0, switch_hits: int = 4, switch_ratio: float = 0.5, max_tracklets: int = 8,
+                 exit_wait_s: float = 1.5, switch_min_up: float = 0.5, exit_horizon_s: float = 0.3):
         self.init_conf = init_conf
         self.lost_s = lost_s
         self.gate_diams = gate_diams
@@ -86,6 +125,66 @@ class BallTracker:
         self._vx = 0.0
         self._vy = 0.0
         self._recent: Deque[tuple] = deque()  # (t, cx, cy) of recent unassigned detections
+        self.switch_speed = switch_speed
+        self.switch_hits = switch_hits
+        self.switch_ratio = switch_ratio
+        self.max_tracklets = max_tracklets
+        self._side: List[_Tracklet] = []
+        self.switched = False
+        self.exit_wait_s = exit_wait_s
+        self.switch_min_up = switch_min_up  # upward share of the speed a side track needs to take over
+        self.exit_horizon_s = exit_horizon_s
+
+    def _exited_top(self, last: BallObs) -> bool:
+        """The track was rising fast enough to be above the top of the frame within ``exit_horizon_s``."""
+        return self._vy < 0 and last.y + self._vy * self.exit_horizon_s < 0
+
+    def _reacquire(self, t: float, last: BallObs, balls: Sequence[Detection]) -> Optional[Detection]:
+        """A detection where a ball that left through the top edge would come back into view."""
+        dt = t - last.t
+        diam = max(last.diameter, 12.0)
+        px = last.x + self._vx * dt
+        tol_x = max(4 * diam, 0.3 * abs(self._vx) * dt)
+        # It comes back in from above, so it reappears no lower than where it was lost.
+        cands = [d for d in balls if abs(d.box.cx - px) <= tol_x and d.box.cy <= last.y + diam]
+        return min(cands, key=lambda d: abs(d.box.cx - px)) if cands else None
+
+    def _gate(self, x: float, y: float, d: float, vx: float, vy: float, dt: float) -> tuple:
+        """(predicted x, predicted y, gate radius) for a constant-velocity track."""
+        diam = max(d, 12.0)
+        gate = max(self.min_gate_px, self.gate_diams * diam) + 0.5 * math.hypot(vx, vy) * dt
+        return x + vx * dt, y + vy * dt, gate
+
+    def _update_side(self, t: float, balls: Sequence[Detection]) -> None:
+        """Associate the detections the main track did not take with the side tracks."""
+        self._side = [k for k in self._side if t - k.t <= self.lost_s]
+        free = list(balls)
+        pairs = []
+        for ki, k in enumerate(self._side):
+            px, py, gate = self._gate(k.x, k.y, k.d, k.vx, k.vy, t - k.t)
+            for di, d in enumerate(free):
+                dist = math.hypot(d.box.cx - px, d.box.cy - py)
+                if dist <= gate:
+                    pairs.append((dist, ki, di))
+        used_k, used_d = set(), set()
+        for _, ki, di in sorted(pairs):
+            if ki not in used_k and di not in used_d:
+                used_k.add(ki)
+                used_d.add(di)
+                d = free[di]
+                self._side[ki].step(t, d.box.cx, d.box.cy, max(d.box.w, d.box.h))
+        for di, d in enumerate(free):
+            if di not in used_d and len(self._side) < self.max_tracklets:
+                self._side.append(_Tracklet(t, d.box.cx, d.box.cy, max(d.box.w, d.box.h)))
+
+    def _riser(self, t: float, main_speed: float) -> Optional[_Tracklet]:
+        best = None
+        for k in self._side:
+            sp = k.speed()
+            if (k.t == t and k.hits >= self.switch_hits and sp >= self.switch_speed and -k.vy >= self.switch_min_up * math.hypot(k.vx, k.vy)
+                    and main_speed < self.switch_ratio * sp and (best is None or sp > best.speed())):
+                best = k
+        return best
 
     def _motion_confirmed(self, t: float, balls: Sequence[Detection]) -> Optional[Detection]:
         for d in sorted(balls, key=lambda d: -d.conf):
@@ -100,12 +199,20 @@ class BallTracker:
         return None
 
     def update(self, t: float, detections: Sequence[Detection]) -> Optional[BallObs]:
+        self.switched = False
         balls = [d for d in detections if d.label == "ball"]
         while self._recent and t - self._recent[0][0] > self.confirm_s:
             self._recent.popleft()
         if not balls:
             return None
         last = self._last
+        if last is not None and self.lost_s < t - last.t <= self.exit_wait_s and self._exited_top(last):
+            back = self._reacquire(t, last, balls)
+            if back is None:
+                return None
+            self._vy = 0.0  # it is coming down now; the gate re-learns the speed
+            self._last = BallObs(t, back.box.cx, back.box.cy, max(back.box.w, back.box.h))
+            return self._last
         if last is None or t - last.t > self.lost_s:
             cands = [d for d in balls if d.conf >= self.init_conf]
             if cands:
@@ -119,17 +226,29 @@ class BallTracker:
                 last = None  # keep the velocity from the confirming pair
         else:
             dt = t - last.t
-            px, py = last.x + self._vx * dt, last.y + self._vy * dt
+            px, py, gate = self._gate(last.x, last.y, last.diameter, self._vx, self._vy, dt)
             diam = max(last.diameter, 12.0)
-            gate = max(self.min_gate_px, self.gate_diams * diam) + 0.5 * math.hypot(self._vx, self._vy) * dt
             scored = []
             for d in balls:
                 dist = math.hypot(d.box.cx - px, d.box.cy - py)
                 if dist <= gate:
                     scored.append((d.conf / (1.0 + dist / diam), d))
-            if not scored:
+            best = max(scored, key=lambda s: s[0])[1] if scored else None
+            self._update_side(t, [d for d in balls if d is not best])
+            riser = self._riser(t, math.hypot(self._vx, self._vy) / diam)
+            if riser is not None:
+                self._side.remove(riser)
+                if best is not None:  # the old target becomes a side track
+                    k = _Tracklet(last.t, last.x, last.y, last.diameter)
+                    k.vx, k.vy = self._vx, self._vy
+                    k.step(t, best.box.cx, best.box.cy, max(best.box.w, best.box.h))
+                    self._side.append(k)
+                self._vx, self._vy = riser.vx, riser.vy
+                self._last = BallObs(t, riser.x, riser.y, riser.d)
+                self.switched = True
+                return self._last
+            if best is None:
                 return None
-            best = max(scored, key=lambda s: s[0])[1]
 
         obs = BallObs(t, best.box.cx, best.box.cy, max(best.box.w, best.box.h))
         if last is not None and 0 < t - last.t <= self.lost_s:

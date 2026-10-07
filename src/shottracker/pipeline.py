@@ -56,6 +56,8 @@ class ShotPipeline:
         if self.static is not None:
             dets = self.static.filter(t, dets)
         ball = self.tracker.update(t, dets)
+        if self.tracker.switched:
+            self.shots.note_track_switch(t)
         hoop = self.fixed_hoop if self.fixed_hoop is not None else self.hoops.update(dets)
 
         pose = self.pose(frame, t) if self.pose is not None else None

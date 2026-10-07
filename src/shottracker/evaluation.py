@@ -23,6 +23,12 @@ from typing import Dict, List, Optional, Sequence, Tuple
 MADE, MISSED = "made", "missed"
 _MADE_WORDS = {"made", "make", "m", "1", "yes", "y", "in", "score", "scored", "goal"}
 _MISS_WORDS = {"missed", "miss", "x", "0", "no", "n", "out"}
+SHOT_TYPES = ("FT", "mid", "3PT")
+_SHOT_TYPE_WORDS = {
+    "ft": "FT", "1": "FT", "free throw": "FT", "freethrow": "FT",
+    "mid": "mid", "2": "mid", "mid-range": "mid", "midrange": "mid", "2pt": "mid",
+    "3pt": "3PT", "3": "3PT", "three": "3PT", "3-pointer": "3PT",
+}
 
 
 @dataclass(frozen=True)
@@ -30,6 +36,7 @@ class LabeledShot:
     t: float
     outcome: str
     note: str = ""
+    shot_type: str = ""  # FT / mid / 3PT, or "" when not tagged
 
 
 @dataclass(frozen=True)
@@ -59,8 +66,17 @@ def normalize_outcome(value: str) -> str:
     raise ValueError(f"outcome must be made or missed, got {value!r}")
 
 
+def normalize_shot_type(value: str) -> str:
+    v = value.strip().lower()
+    if not v:
+        return ""
+    if v in _SHOT_TYPE_WORDS:
+        return _SHOT_TYPE_WORDS[v]
+    raise ValueError(f"shot_type must be FT, mid or 3PT (or empty), got {value!r}")
+
+
 def load_labels(path: Path) -> List[LabeledShot]:
-    """CSV with header ``time_s,outcome[,note]``. Blank lines and lines starting with # are ignored."""
+    """CSV with header ``time_s,outcome[,shot_type][,note]``. Blank lines and lines starting with # are ignored."""
     rows: List[LabeledShot] = []
     with open(path, newline="", encoding="utf-8-sig") as f:
         lines = [ln for ln in f if ln.strip() and not ln.lstrip().startswith("#")]
@@ -68,7 +84,8 @@ def load_labels(path: Path) -> List[LabeledShot]:
         if not (rec.get("time_s") or "").strip() and not (rec.get("outcome") or "").strip():
             continue  # a half-empty template row
         try:
-            rows.append(LabeledShot(parse_time(rec["time_s"]), normalize_outcome(rec["outcome"]), (rec.get("note") or "").strip()))
+            rows.append(LabeledShot(parse_time(rec["time_s"]), normalize_outcome(rec["outcome"]), (rec.get("note") or "").strip(),
+                                    normalize_shot_type(rec.get("shot_type") or "")))
         except (KeyError, ValueError) as e:
             raise ValueError(f"{path.name}: data row {i - 1}: {e}") from e
     return sorted(rows, key=lambda s: s.t)
@@ -114,6 +131,7 @@ class VideoResult:
     made_labeled: int
     made_predicted: int
     errors: List[Dict] = field(default_factory=list)
+    by_shot_type: Dict[str, List[int]] = field(default_factory=dict)  # type -> [correct, labelled]
 
     @property
     def make_count_error(self) -> int:
@@ -128,24 +146,33 @@ def evaluate_video(video: str, labels: Sequence[LabeledShot], preds: Sequence[Pr
     pairs, miss_l, extra_p = match_shots(labels, preds, tol_s)
     errors: List[Dict] = []
     correct = 0
+    right = set()
     for li, pi in pairs:
         if labels[li].outcome == preds[pi].outcome:
             correct += 1
+            right.add(li)
         else:
             errors.append(dict(video=video, kind="wrong_outcome", t=round(labels[li].t, 2), label=labels[li].outcome,
-                               predicted=preds[pi].outcome, reason=preds[pi].reason, note=labels[li].note))
+                               predicted=preds[pi].outcome, reason=preds[pi].reason, shot_type=labels[li].shot_type,
+                               note=labels[li].note))
     for li in miss_l:
         errors.append(dict(video=video, kind="missed_shot", t=round(labels[li].t, 2), label=labels[li].outcome,
-                           predicted="", reason="", note=labels[li].note))
+                           predicted="", reason="", shot_type=labels[li].shot_type, note=labels[li].note))
     for pi in extra_p:
         errors.append(dict(video=video, kind="extra_shot", t=round(preds[pi].t, 2), label="",
-                           predicted=preds[pi].outcome, reason=preds[pi].reason, note=""))
+                           predicted=preds[pi].outcome, reason=preds[pi].reason, shot_type="", note=""))
+    by_type: Dict[str, List[int]] = {}
+    for li, l in enumerate(labels):
+        if l.shot_type:
+            g = by_type.setdefault(l.shot_type, [0, 0])
+            g[0] += li in right
+            g[1] += 1
     errors.sort(key=lambda e: (e["video"], e["t"]))
     return VideoResult(
         video=video, labeled=len(labels), predicted=len(preds), matched=len(pairs),
         false_neg=len(miss_l), false_pos=len(extra_p), correct=correct,
         made_labeled=sum(l.outcome == MADE for l in labels), made_predicted=sum(p.outcome == MADE for p in preds),
-        errors=errors,
+        errors=errors, by_shot_type=by_type,
     )
 
 

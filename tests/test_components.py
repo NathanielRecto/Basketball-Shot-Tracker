@@ -165,3 +165,58 @@ def test_pipeline_attaches_pose_metrics_and_release_hint():
     assert ev.outcome is Outcome.MADE
     assert "knee_min_deg" in ev.biomechanics
     assert summarize(pipe.events).avg_knee_min_deg is not None
+
+
+def test_find_videos_keys_numbered_videos_by_number(tmp_path):
+    from shottracker.video import find_videos
+
+    for name in ["video_07.mp4", "session_02.MOV", "session_10.mov", "notes.txt", "clip.mp4", "session_03.csv"]:
+        (tmp_path / name).write_text("")
+    assert {k: v.name for k, v in find_videos(tmp_path).items()} == {
+        2: "session_02.MOV", 7: "video_07.mp4", 10: "session_10.mov"}
+
+
+def _ball(cx, cy, conf=0.6, size=30):
+    return Detection("ball", conf, Box(cx - size / 2, cy - size / 2, cx + size / 2, cy + size / 2))
+
+
+def test_tracker_switches_from_a_wobbling_false_positive_to_a_rising_shot():
+    # A "ball" on someone's head drifts slowly and is detected every frame, so the track never
+    # gets lost; the real ball then rises fast a few hundred pixels away.
+    tr = BallTracker()
+    fps = 30
+    for i in range(30):
+        tr.update(i / fps, [_ball(800 + i, 600, conf=0.7)])
+    got = []
+    for j in range(10):
+        t = (30 + j) / fps
+        got.append(tr.update(t, [_ball(830, 600, conf=0.7), _ball(1300 - 20 * j, 600 - 40 * j, conf=0.5)]))
+    assert got[-1].x < 1200 and got[-1].y < 400  # following the shot, not the head
+    assert not got[0].x > 1000  # no instant jump on the very first sighting
+
+
+def test_tracker_waits_for_a_ball_that_left_through_the_top_edge():
+    tr = BallTracker()
+    fps = 30
+    for i in range(10):  # rising fast towards the top edge
+        obs = tr.update(i / fps, [_ball(1200 - 25 * i, 400 - 40 * i)])
+    assert obs is not None and obs.y < 50
+    t = 10 / fps
+    for k in range(20):  # out of view for ~0.65 s; a confident leg "ball" is the only detection
+        assert tr.update(t + k / fps, [_ball(1400, 850, conf=0.8)]) is None
+    back = tr.update(t + 20 / fps, [_ball(1400, 850, conf=0.8), _ball(1100, 40, conf=0.3), _ball(470, 50, conf=0.3)])
+    assert back is not None and (round(back.x), round(back.y)) == (470, 50)  # where its sideways motion carried it
+
+
+def test_shot_logic_does_not_give_up_on_a_ball_above_the_frame():
+    from shottracker.shot_logic import ShotDetector
+    from shottracker.types import BallObs
+
+    hoop = Box(500, 300, 620, 460)
+    sd = ShotDetector()
+    fps = 30
+    for i in range(8):  # rising past the arm line and out through the top
+        sd.update(i / fps, BallObs(i / fps, 900 - 20 * i, 330 - 45 * i, 30), hoop)
+    for k in range(1, 25):  # 0.8 s with no ball: longer than lost_s, shorter than top_exit_wait_s
+        sd.update(7 / fps + k / fps, None, hoop)
+    assert not any(m.startswith("abort") for _, m in sd.log)

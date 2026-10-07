@@ -1,10 +1,24 @@
 """Video I/O helpers (OpenCV)."""
 from __future__ import annotations
 
-from typing import Iterator, Tuple
+import re
+from pathlib import Path
+from typing import Dict, Iterator, Tuple
 
 import cv2
 import numpy as np
+
+VIDEO_EXTS = {".mp4", ".mov"}
+
+
+def find_videos(directory) -> Dict[int, Path]:
+    """Numbered videos in ``directory`` keyed by number: ``video_07.mp4`` -> 7, ``session_02.mov`` -> 2."""
+    out: Dict[int, Path] = {}
+    for p in sorted(Path(directory).iterdir()):
+        m = re.fullmatch(r"[A-Za-z]+_(\d+)", p.stem)
+        if m and p.is_file() and p.suffix.lower() in VIDEO_EXTS:
+            out[int(m.group(1))] = p
+    return out
 
 
 def probe(path: str) -> Tuple[float, int, int, int]:

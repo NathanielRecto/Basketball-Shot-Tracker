@@ -68,6 +68,12 @@ class ShotDetector:
         """Optional hint from pose estimation: the ball was still in the shooter's hand at ``t``."""
         self._hand_t = t
 
+    def note_track_switch(self, t: float) -> None:
+        """The tracker jumped to a different object: the points so far belong to something else."""
+        if self._state is _State.IDLE:
+            self._buf.clear()
+            self.log.append((t, "track_switch"))
+
     def update(self, t: float, ball: Optional[BallObs], hoop: Optional[Box]) -> List[ShotEvent]:
         if hoop is not None:
             self._hoop = hoop
@@ -86,6 +92,16 @@ class ShotDetector:
         return self._confirm(t, ball)
 
     # ---- helpers ----------------------------------------------------------------------
+
+    def _exited_top(self) -> bool:
+        """The last two observations were rising fast enough to be above the frame within 0.3 s."""
+        if len(self._buf) < 2:
+            return False
+        a, b = self._buf[-2], self._buf[-1]
+        if b.t <= a.t:
+            return False
+        vy = (b.y - a.y) / (b.t - a.t)
+        return vy < 0 and b.y + vy * 0.3 < 0
 
     def _rim_y(self) -> float:
         h = self._hoop
@@ -180,6 +196,8 @@ class ShotDetector:
             return self._abort(t, "timeout")
         if ball is None:
             if self._buf and t - self._buf[-1].t > cfg.lost_s:
+                if t - self._buf[-1].t <= cfg.top_exit_wait_s and self._exited_top():
+                    return []  # high arc above the frame: wait for it to come back down
                 return self._lost(t)
             return []
         if abs(ball.x - h.cx) > cfg.max_dx * h.w:

@@ -52,7 +52,12 @@ def main():
             data=args.data, imgsz=args.imgsz, batch=args.batch, workers=args.workers,
             patience=args.patience, device=args.device, project=RUNS_DIR, exist_ok=True, **extra,
         )
+    import yaml
+
+    splits = yaml.safe_load(Path(args.data).read_text())
     for split in ("val", "test"):
+        if not splits.get(split):
+            continue  # e.g. the combined set has no test split: held-out footage is the test
         m = model.val(data=args.data, split=split, imgsz=args.imgsz, device=args.device)
         print(f"[{split}] mAP50={m.box.map50:.3f} mAP50-95={m.box.map:.3f}")
 

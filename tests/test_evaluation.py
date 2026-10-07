@@ -59,6 +59,15 @@ def test_load_labels_empty_template_is_empty(tmp_path):
     assert load_labels(f) == []
 
 
+def test_load_labels_reads_shot_type(tmp_path):
+    f = tmp_path / "session_02.csv"
+    f.write_text("time_s,outcome,shot_type,note\n5,made,3,\n9,missed,FT,\n12,made,,\n")
+    assert [s.shot_type for s in load_labels(f)] == ["3PT", "FT", ""]
+    f.write_text("time_s,outcome,shot_type\n5,made,layup\n")
+    with pytest.raises(ValueError):
+        load_labels(f)
+
+
 def test_load_labels_names_the_bad_row(tmp_path):
     f = tmp_path / "video_03.csv"
     f.write_text("time_s,outcome,note\n5,made,\n6,perhaps,\n")
@@ -95,6 +104,13 @@ def test_every_error_kind_is_reported():
     assert (r.matched, r.correct, r.false_pos, r.false_neg) == (2, 1, 1, 1)
     assert sorted(e["kind"] for e in r.errors) == ["extra_shot", "missed_shot", "wrong_outcome"]
     assert r.made_labeled == 2 and r.made_predicted == 2 and r.make_count_error == 0  # offsetting errors hide in counts
+
+
+def test_results_by_shot_type():
+    labels = [LabeledShot(5, "made", shot_type="3PT"), LabeledShot(15, "made", shot_type="3PT"),
+              LabeledShot(25, "missed", shot_type="FT"), LabeledShot(35, "missed")]
+    r = evaluate_video("v", labels, [P(5, "made"), P(15, "missed"), P(25, "missed"), P(35, "missed")])
+    assert r.by_shot_type == {"3PT": [1, 2], "FT": [1, 1]}  # untagged shots are left out
 
 
 def test_summary_numbers():
@@ -149,3 +165,44 @@ def test_evaluate_script_with_nothing_to_do(tmp_path):
     out = subprocess.run([sys.executable, str(ROOT / "scripts" / "evaluate.py"), "--labels", str(tmp_path / "labels"),
                           "--pred", str(tmp_path / "pred"), "--meta", "x", "--author", "x"], capture_output=True, text=True)
     assert out.returncode == 1 and "Nothing to evaluate" in out.stdout
+
+
+def test_compare_runs_script_scores_runs_on_the_same_shots(tmp_path):
+    labels = tmp_path / "labels"
+    labels.mkdir()
+    (labels / "session_02.csv").write_text("time_s,outcome,shot_type,note\n5,made,3PT,\n15,missed,FT,\n")
+    (labels / "session_03.csv").write_text("time_s,outcome\n8,made\n")  # only in one run -> left out
+    for run, outcomes in (("old", ["missed", "missed"]), ("new", ["made", "missed"])):
+        (tmp_path / run / "session_02").mkdir(parents=True)
+        shots = [{"t_cross": t, "outcome": o} for t, o in zip((5.1, 15.2), outcomes)]
+        (tmp_path / run / "session_02" / "summary.json").write_text(json.dumps({"shots": shots}))
+    (tmp_path / "new" / "session_03").mkdir()
+    (tmp_path / "new" / "session_03" / "summary.json").write_text(json.dumps({"shots": []}))
+
+    out = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "compare_runs.py"), "--labels", str(labels),
+         "--run", f"old={tmp_path / 'old'}", "--run", f"new={tmp_path / 'new'}"],
+        capture_output=True, text=True,
+    )
+    assert out.returncode == 0, out.stderr
+    assert "left out session_03" in out.stdout
+    lines = {ln.split()[0]: ln for ln in out.stdout.splitlines() if ln.startswith(("old ", "new "))}
+    assert "50.0%" in lines["old"] and "100.0%" in lines["new"]
+
+
+def test_compare_runs_warns_when_runs_used_different_settings(tmp_path):
+    labels = tmp_path / "labels"
+    labels.mkdir()
+    (labels / "video_01.csv").write_text("time_s,outcome\n5,made\n")
+    for run, imgsz in (("a", 960), ("b", 1280)):
+        d = tmp_path / run / "video_01"
+        d.mkdir(parents=True)
+        (d / "summary.json").write_text(json.dumps({"shots": [{"t_cross": 5.0, "outcome": "made"}]}))
+        (d / "settings.json").write_text(json.dumps({"imgsz": imgsz, "stride": 1}))
+    out = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "compare_runs.py"), "--labels", str(labels),
+         "--run", f"a={tmp_path / 'a'}", "--run", f"b={tmp_path / 'b'}"],
+        capture_output=True, text=True,
+    )
+    assert out.returncode == 0, out.stderr
+    assert "WARNING" in out.stdout and "imgsz on video_01" in out.stdout

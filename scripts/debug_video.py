@@ -74,7 +74,8 @@ def main():
 
     (out / "debug.json").write_text(json.dumps({
         "video": a.video, "hoop": [hoop.x1, hoop.y1, hoop.x2, hoop.y2], "rim_y": rim_y, "arm_y": arm_y,
-        "frame_size": [w, h], "conf": a.conf, "low_conf": a.low_conf, "frames": frames, "events": events,
+        "frame_size": [w, h], "conf": a.conf, "low_conf": a.low_conf, "weights": a.weights, "imgsz": a.imgsz,
+        "stride": a.stride, "frames": frames, "events": events,
     }))
 
     # ---- stats ---------------------------------------------------------------------------

@@ -7,6 +7,10 @@ Expects
     data/eval_videos/labels/video_XX.csv      your labels (see docs/labeling.md)
     outputs/eval/video_XX/summary.json        written by run_eval_videos.py
 
+Own footage:
+
+    python scripts/evaluate.py --labels data/own_footage/labels --pred outputs/own_eval --videos 2 3 4
+
 Videos without labels (or without predictions) are skipped and listed. Writes
 outputs/eval/evaluation.json and outputs/eval/errors.csv (every miss/extra/wrong call, to review).
 """
@@ -22,7 +26,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from pathlib import Path  # noqa: E402
 
 from shottracker.evaluation import (  # noqa: E402
-    evaluate_video, load_csv_by_video, load_labels, load_predictions, summarize, video_number, wilson_interval,
+    SHOT_TYPES, evaluate_video, load_csv_by_video, load_labels, load_predictions, summarize, video_number, wilson_interval,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -36,8 +40,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--labels", default=str(ROOT / "data/eval_videos/labels"))
     ap.add_argument("--pred", default=str(ROOT / "outputs/eval"))
-    ap.add_argument("--meta", default=str(ROOT / "data/eval_videos/listed_counts.csv"), help="optional: setup info per video")
-    ap.add_argument("--author", default=str(ROOT / "data/eval_videos/author_algorithm_results.csv"), help="optional: other system's results")
+    ap.add_argument("--meta", default=None, help="optional: setup info per video (default: listed_counts.csv next to the labels folder)")
+    ap.add_argument("--author", default=None, help="optional: other system's results (default: author_algorithm_results.csv next to the labels folder)")
     ap.add_argument("--tol", type=float, default=1.5, help="seconds within which a prediction matches a label")
     ap.add_argument("--out", default=None, help="where to write evaluation.json / errors.csv (default: --pred)")
     ap.add_argument("--videos", type=int, nargs="*", help="only these video numbers (e.g. the test set)")
@@ -45,11 +49,14 @@ def main():
 
     labels_dir, pred_dir = Path(a.labels), Path(a.pred)
     out_dir = Path(a.out) if a.out else pred_dir
-    meta = load_csv_by_video(Path(a.meta)) if Path(a.meta).is_file() else {}
-    author = load_csv_by_video(Path(a.author)) if Path(a.author).is_file() else {}
+    # Looked up next to the labels folder so another dataset never picks up these per-number files.
+    meta_path = Path(a.meta) if a.meta else labels_dir.parent / "listed_counts.csv"
+    author_path = Path(a.author) if a.author else labels_dir.parent / "author_algorithm_results.csv"
+    meta = load_csv_by_video(meta_path) if meta_path.is_file() else {}
+    author = load_csv_by_video(author_path) if author_path.is_file() else {}
 
     results, skipped = [], []
-    for lf in sorted(labels_dir.glob("video_*.csv")):
+    for lf in sorted(f for f in labels_dir.glob("*_*.csv") if video_number(f.stem) is not None):
         name = lf.stem
         if a.videos and video_number(name) not in set(a.videos):
             continue
@@ -102,6 +109,21 @@ def main():
             glo, ghi = wilson_interval(c, n)
             print(f"{k:<28} {c:>3}/{n:<3} {pct(c / n):>7}   95% CI {pct(glo)} - {pct(ghi)}")
 
+    types = defaultdict(lambda: [0, 0])
+    for r in results:
+        for k, (c, n) in r.by_shot_type.items():
+            types[k][0] += c
+            types[k][1] += n
+    if types:
+        print("\n=== By shot type (end-to-end accuracy) ===")
+        for k in [t for t in SHOT_TYPES if t in types]:
+            c, n = types[k]
+            glo, ghi = wilson_interval(c, n)
+            print(f"{k:<28} {c:>3}/{n:<3} {pct(c / n):>7}   95% CI {pct(glo)} - {pct(ghi)}")
+        untagged = s.labeled - sum(n for _, n in types.values())
+        if untagged:
+            print(f"({untagged} labelled shots have no shot type)")
+
     both = [r for r in results if video_number(r.video) in author]
     if both:
         ours_make = sum(r.make_count_error for r in both) / len(both)
@@ -116,7 +138,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     errors = [e for r in results for e in r.errors]
     with open(out_dir / "errors.csv", "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["video", "kind", "t", "label", "predicted", "reason", "note"])
+        w = csv.DictWriter(f, fieldnames=["video", "kind", "t", "label", "predicted", "reason", "shot_type", "note"])
         w.writeheader()
         w.writerows(errors)
     (out_dir / "evaluation.json").write_text(json.dumps({

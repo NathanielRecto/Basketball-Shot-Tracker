@@ -16,7 +16,7 @@ class ShotConfig:
 
     # Arming: the ball must get this many hoop-heights above the rim line, and be
     # within this many hoop-widths of the hoop horizontally, to start a shot attempt.
-    arm_margin: float = 0.5
+    arm_margin: float = 0.15  # was 0.5; a low camera close to the hoop (own dev session 1) sees many arcs peak just above the rim
     max_dx: float = 5.0
 
     # Flight bookkeeping.
@@ -24,6 +24,7 @@ class ShotConfig:
     gap_max_s: float = 0.50  # longest run of missed frames still treated as one continuous flight
     max_flight_s: float = 3.5
     lost_s: float = 0.35
+    top_exit_wait_s: float = 1.5  # a ball that left through the top edge may be out of view this long
     max_extrap_s: float = 0.8
     min_fit_points: int = 5
     max_fit_rms: float = 0.6  # of hoop height; rejects non-parabolic "flights"

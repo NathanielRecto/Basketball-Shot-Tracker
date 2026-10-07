@@ -7,15 +7,21 @@ A window opens on a frame of each video. Drag a box around the rim AND the hangi
 or SPACE. Press C to skip a video. If the hoop is blocked in that frame, rerun with --t 10
 to use a frame 10 seconds in.
 Boxes are saved to data/eval_videos/hoop_overrides.json, which run_eval_videos.py reads via
---hoop-overrides.
+--hoop-overrides. For your own footage:
+
+    python scripts/mark_hoop.py 1 2 3 4 --videos-dir data/own_footage/raw --out data/own_footage/hoop_overrides.json
 """
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import cv2
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+
+from shottracker.video import find_videos  # noqa: E402
 
 
 def read_frame(cap, t):
@@ -35,9 +41,13 @@ def main():
 
     out = Path(a.out)
     boxes = json.loads(out.read_text()) if out.exists() else {}
+    found = find_videos(a.videos_dir)
     for v in a.videos:
-        name = f"video_{v:02d}"
-        cap = cv2.VideoCapture(str(Path(a.videos_dir) / f"{name}.mp4"))
+        if v not in found:
+            print(f"no video number {v} in {a.videos_dir}")
+            continue
+        name = found[v].stem
+        cap = cv2.VideoCapture(str(found[v]))
         t = a.t
         frame = read_frame(cap, t)
         if frame is None:

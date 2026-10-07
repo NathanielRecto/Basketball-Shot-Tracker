@@ -2,6 +2,7 @@
 
     python scripts/replay_eval.py                 # dev videos 1 4 5 8 9 12 13 16
     python scripts/replay_eval.py --errors        # also list every error with context
+    python scripts/replay_eval.py --labels data/own_footage/labels --videos 1   # own dev session
 
 Needs outputs/debug/video_XX/debug.json (scripts/debug_video.py) and labels. Development
 videos only: never point this at the test set while tuning.
@@ -16,17 +17,18 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "src"))
 
 from replay_debug import replay  # noqa: E402
-from shottracker.evaluation import PredictedShot, evaluate_video, load_labels, summarize  # noqa: E402
+from shottracker.evaluation import PredictedShot, evaluate_video, load_labels, summarize, video_number  # noqa: E402
 
 DEV = [1, 4, 5, 8, 9, 12, 13, 16]
 
 
-def run(videos, conf, tol, show_errors):
+def run(videos, conf, tol, show_errors, labels_dir=ROOT / "data" / "eval_videos" / "labels", debug_root=ROOT / "outputs" / "debug"):
     results = []
+    names = {video_number(f.stem): f.stem for f in Path(labels_dir).glob("*_*.csv")}
     for v in videos:
-        name = f"video_{v:02d}"
-        dbg = ROOT / "outputs" / "debug" / name / "debug.json"
-        lab = ROOT / "data" / "eval_videos" / "labels" / f"{name}.csv"
+        name = names.get(v, f"video_{v:02d}")
+        dbg = Path(debug_root) / name / "debug.json"
+        lab = Path(labels_dir) / f"{name}.csv"
         if not dbg.is_file() or not lab.is_file():
             print(f"skip {name}: missing debug.json or labels")
             continue
@@ -56,8 +58,10 @@ def main():
     ap.add_argument("--conf", type=float, default=0.15)
     ap.add_argument("--tol", type=float, default=1.5)
     ap.add_argument("--errors", action="store_true")
+    ap.add_argument("--labels", default=str(ROOT / "data" / "eval_videos" / "labels"))
+    ap.add_argument("--debug-root", default=str(ROOT / "outputs" / "debug"))
     a = ap.parse_args()
-    run(a.videos, a.conf, a.tol, a.errors)
+    run(a.videos, a.conf, a.tol, a.errors, a.labels, a.debug_root)
     return 0
 
 

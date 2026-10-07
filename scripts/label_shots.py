@@ -1,14 +1,16 @@
 """Label shots by watching the video and pressing a key: no typing timestamps.
 
     python scripts/label_shots.py 1 4 5 8 9 12 13 16
+    python scripts/label_shots.py 1 2 3 4 --videos-dir data/own_footage/raw --labels-dir data/own_footage/labels
 
 The video plays in a window. Each time a shot reaches the hoop, press:
     M  = made        X  = missed        Z  = undo the last label
+    1 / 2 / 3 = tag the latest shot (at or before now) as free throw / mid-range / three
     SPACE = pause / play                S  = slow motion on / off
     LEFT / RIGHT arrow (or A / D) = back / forward 2 seconds
     , / .  = one frame back / forward (while paused)
     ENTER = save and go to the next video     ESC = save and quit
-Labels are saved to data/eval_videos/labels/video_XX.csv after every key press, so nothing
+Labels are saved to <labels-dir>/<video name>.csv after every key press, so nothing
 is lost if the window is closed. Re-opening a video keeps its existing labels.
 
 This tool never shows the tracker's predictions, so labels stay unbiased.
@@ -20,15 +22,17 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 LABELS_DIR = ROOT / "data" / "eval_videos" / "labels"
 VIDEOS_DIR = ROOT / "data" / "eval_videos"
+SHOT_TYPE_KEYS = {ord("1"): "FT", ord("2"): "mid", ord("3"): "3PT"}
 
 KEYS_LEFT = {2424832, 65361, ord("a"), ord("A")}  # Windows / Linux arrow codes from waitKeyEx
 KEYS_RIGHT = {2555904, 65363, ord("d"), ord("D")}
 
 
 def read_labels(path: Path):
-    """(header comment lines, [(time_s, outcome, note), ...])"""
+    """(header comment lines, [(time_s, outcome, shot_type, note), ...])"""
     if not path.exists():
         return [], []
     text = path.read_text(encoding="utf-8-sig")
@@ -37,7 +41,7 @@ def read_labels(path: Path):
     rows = []
     for r in csv.DictReader(body):
         if (r.get("time_s") or "").strip() and (r.get("outcome") or "").strip():
-            rows.append((float(r["time_s"]), r["outcome"].strip(), (r.get("note") or "").strip()))
+            rows.append((float(r["time_s"]), r["outcome"].strip(), (r.get("shot_type") or "").strip(), (r.get("note") or "").strip()))
     return comments, rows
 
 
@@ -46,11 +50,20 @@ def write_labels(path: Path, comments, rows) -> None:
     for c in comments:
         buf.write(c + "\n")
     w = csv.writer(buf, lineterminator="\n")
-    w.writerow(["time_s", "outcome", "note"])
-    for t, outcome, note in sorted(rows):
-        w.writerow([f"{t:.2f}", outcome, note])
+    w.writerow(["time_s", "outcome", "shot_type", "note"])
+    for t, outcome, shot_type, note in sorted(rows):
+        w.writerow([f"{t:.2f}", outcome, shot_type, note])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(buf.getvalue(), encoding="utf-8")
+
+
+def latest_label_at(rows, t: float):
+    """Index of the label with the largest time <= ``t`` (a small slack covers the key-press delay)."""
+    best = None
+    for i, r in enumerate(rows):
+        if r[0] <= t + 0.05 and (best is None or r[0] > rows[best][0]):
+            best = i
+    return best
 
 
 def label_video(video: Path, label_path: Path, max_height: int) -> str:
@@ -64,7 +77,7 @@ def label_video(video: Path, label_path: Path, max_height: int) -> str:
         return "next"
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    win = f"{video.stem}  |  M made   X missed   Z undo   SPACE pause   S slow   arrows +/-2s   ENTER next   ESC quit"
+    win = f"{video.stem}  |  M made   X missed   1/2/3 FT/mid/3PT   Z undo   SPACE pause   S slow   arrows +/-2s   ENTER next   ESC quit"
     cv2.namedWindow(win, cv2.WINDOW_AUTOSIZE)
 
     idx, paused, slow, flash, flash_until = 0, False, False, "", -1
@@ -86,7 +99,9 @@ def label_video(video: Path, label_path: Path, max_height: int) -> str:
         scale = min(1.0, max_height / frame.shape[0])
         disp = cv2.resize(frame, None, fx=scale, fy=scale)
         made = sum(r[1] == "made" for r in rows)
+        untagged = sum(not r[2] for r in rows)
         status = f"{int(t // 60)}:{t % 60:05.2f}   made {made}  missed {len(rows) - made}"
+        status += f"   untagged {untagged}" if untagged else ""
         status += "   PAUSED" if paused else ("   SLOW" if slow else "")
         if idx >= n - 1:
             status += "   END - ENTER for next video"
@@ -112,9 +127,18 @@ def label_video(video: Path, label_path: Path, max_height: int) -> str:
         key = k & 0xFF
         if key in (ord("m"), ord("M"), ord("x"), ord("X")):
             outcome = "made" if key in (ord("m"), ord("M")) else "missed"
-            rows.append((round(t, 2), outcome, ""))
+            rows.append((round(t, 2), outcome, "", ""))
             write_labels(label_path, comments, rows)
             flash, flash_until = f"{outcome.upper()} at {t:.1f}s", idx + int(fps)
+        elif k in SHOT_TYPE_KEYS:
+            i = latest_label_at(rows, t)
+            if i is None:
+                flash, flash_until = "no shot to tag yet", idx + int(fps)
+            else:
+                lt, lo, _, ln = rows[i]
+                rows[i] = (lt, lo, SHOT_TYPE_KEYS[k], ln)
+                write_labels(label_path, comments, rows)
+                flash, flash_until = f"{lo.upper()} at {lt:.1f}s = {SHOT_TYPE_KEYS[k]}", idx + int(fps)
         elif key in (ord("z"), ord("Z")) and rows:
             last = max(rows)
             rows.remove(last)
@@ -150,10 +174,18 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("videos", type=int, nargs="+", help="video numbers, e.g. 1 4 5 8")
     ap.add_argument("--max-height", type=int, default=900, help="window height in pixels")
+    ap.add_argument("--videos-dir", default=str(VIDEOS_DIR))
+    ap.add_argument("--labels-dir", default=str(LABELS_DIR))
     a = ap.parse_args()
+    from shottracker.video import find_videos
+
+    found = find_videos(a.videos_dir)
     for v in a.videos:
-        name = f"video_{v:02d}"
-        if label_video(VIDEOS_DIR / f"{name}.mp4", LABELS_DIR / f"{name}.csv", a.max_height) == "quit":
+        if v not in found:
+            print(f"no video number {v} in {a.videos_dir}")
+            continue
+        video = found[v]
+        if label_video(video, Path(a.labels_dir) / f"{video.stem}.csv", a.max_height) == "quit":
             break
     return 0
 

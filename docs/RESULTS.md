@@ -8,7 +8,9 @@ Two models are evaluated separately:
    list of shots with made / missed calls. Scored against hand labels: confusion matrix,
    precision / recall / F1, accuracy and confidence intervals.
 
-Regenerate every figure and number on this page with `python scripts/make_report.py`
+Sections 1–4 cover the public phone videos with the original system; section 5 covers our own
+iPhone footage; section 6 covers the current system (retrained detector) on both. Regenerate
+the figures and numbers in sections 1–4 with `python scripts/make_report.py`
 (raw numbers: [`results_metrics.json`](results_metrics.json)).
 
 ## Data splits
@@ -149,3 +151,160 @@ with the ball hidden near the rim; added pixel noise and dropped detections):
 Nearly all simulated errors are "fall past" misses where the ball is hidden right after the rim:
 the net-braking check needs to see the ball falling (100% caught when visible, 0% when hidden).
 This measures the logic on the project's own simulator, not real-world accuracy.
+
+## 5. Own iPhone footage (October 2026)
+
+The 16 public videos above are mostly side-on views of one shooter. To test the system on the
+footage it is meant for, four indoor sessions were filmed with an iPhone 11 on a tripod
+(1080p, 60 fps, landscape): **three people taking turns** shooting free throws, mid-range shots
+and threes, with the camera on the **baseline beside the hoop, facing the court**. The raw
+videos are not published (other people appear in them).
+
+| Session | Split | Shots labelled (made) | FT / mid / 3PT | Notes |
+|---|---|---|---|---|
+| 1 | **Dev** | 43 (16) | 11 / 14 / 18 | two balls in play at times |
+| 2 | **Test** | 41 (5) | 10 / 15 / 16 | one ball |
+| 3 | **Test** | 39 (21) | 10 / 14 / 15 | one ball |
+| 4 | **Test** | 39 (11) | 10 / 15 / 14 | one ball |
+
+As before, every shot was labelled blind (time, made / missed, shot type) before any tracker
+output was looked at, the split was fixed before any tuning, and the test sessions were scored
+**once** after the code was frozen (label-file hashes and the exact code are kept with the run).
+The detector was **not** retrained: it is the same baseline as above.
+
+### What went wrong on this footage (found on the dev session)
+
+![Ball height over time, dev session 1, old tracker](images/timeline_own_session01_old_tracker.png)
+
+Blue dots are ball detections, the orange line is what the tracker followed, vertical lines are
+shots it found. Real shots show up as clean arcs, so the detector does see the ball in flight,
+but:
+
+1. **Persistent false "balls" on people.** The detector fires on heads (dark hair, caps), calf
+   sleeves and hands at 0.6–0.8 confidence (the flat bands at y ≈ 700 and 840). The tracker
+   followed a single target, so once it latched onto a head it never let go.
+2. **The ball vanishes near the apex.** From under the hoop, high arcs leave the top of the frame
+   or are lost against the ceiling lights for ~0.5 s; the tracker then restarted on a leg.
+3. **Arcs barely clear the arm line.** The camera is low and close, so the hoop box is tall and
+   many arcs peak just above the rim: half a hoop-height above it was too strict.
+
+### Tracker v2 (tuned on dev session 1 only)
+
+* **Side tracks and switching:** detections the main track does not take are followed as short
+  side tracks; one that rises fast for 4 frames (a released shot) takes over from a main track
+  that is barely moving (a head).
+* **Waiting for a ball that left through the top:** when the track was heading out of the frame
+  it waits up to 1.5 s for the ball to come back down near where it left, instead of restarting
+  on whatever is detected meanwhile. The shot logic waits as well.
+* **Lower arm line:** 0.5 → 0.15 hoop-heights above the rim.
+
+Each change was checked against the old dev videos so it would not break the side-on case
+(replay score 87.8% → 89.8%), and the synthetic benchmark is unchanged.
+
+### Results
+
+| | Dev (session 1, 43 shots) | | **Test (sessions 2–4, 119 shots)** | |
+|---|---|---|---|---|
+| | old tracker | v2 | old tracker | **v2** |
+| **End-to-end accuracy** | 9.3% | 62.8% | 13.4% (95% CI 8–21%) | **37.8% (95% CI 30–47%)** |
+| Shot detection precision | 100% | 100% | 95.7% | **100%** |
+| Shot detection recall | 16.3% | 69.8% | 18.5% | **44.5%** |
+| Make/miss accuracy on found shots | 57.1% | 90.0% | 72.7% | **84.9%** |
+
+Test by session (v2): 11/41, 15/39 and 19/39 shots found and called right (the old tracker found
+**no** shots in session 2). Test by shot type (v2): free throws **60.0%** (18/30), mid-range
+**38.6%** (17/44), three-pointers **22.2%** (10/45).
+
+What this says:
+
+* The two trackers were scored on the same shots and their intervals do not overlap: the
+  improvement is real. But **37.8% is not good enough**, and the dev score (62.8%) overstates it,
+  as expected when tuning on one session.
+* When v2 finds a shot it is usually right (85%) and it **never invented a shot**. The weakness
+  is **recall**: over half the shots are never followed to the hoop, mostly because of the false
+  "balls" on people, and threes (highest arcs, longest out of view) suffer most.
+* The next step is the detector, not the tracker: retrain it on frames from this kind of footage
+  (never from test sessions 2–4) so heads and legs stop looking like balls, and film with more
+  room above the rim.
+* Sessions 2–4 are now **used**. Like the public test videos, they will not be tuned on, and
+  new claims need new footage.
+* Tracker v2 has not been re-scored on the public test videos; the 77.7% in section 2 is the
+  original tracker. (Section 6 re-tests the current system, with the retrained detector, on both
+  test sets.)
+
+## 6. Current system: retrained detector + tracker v2 (October 2026)
+
+The current system scores **92.2%** on the public test videos (was 77.7%) and **78.2%** on our own
+test sessions (was 37.8% with the old detector). Both test sets had been scored before, so these
+are **re-tests of a frozen system**, not first looks: nothing was tuned on them and the code,
+detector and labels were fingerprinted before the runs, but the low 37.8% is what prompted the
+retraining. A clean first-look number needs newly filmed, blind-labelled sessions.
+
+### Detector v2
+
+Fine-tuned from the original detector for 12 epochs (960 px, batch 2) on 8,347 images: the hotshot
+set plus 5,324 frames of [Basketball Detection v6](https://universe.roboflow.com/hooper-ibdsr/basketball-detection-v6)
+by Hooper (CC BY 4.0; phone video of gyms with many people on court; every 8th of 48,110 frames).
+Its hoop boxes cover the rim only, so they became a separate `rim_only` class the tracker ignores;
+its boxes around people were dropped (`scripts/build_combined_dataset.py`). Validation (880 held-out
+images, Hooper frames held out in whole 2,000-frame blocks): precision 0.871, recall 0.823, mAP50
+0.851 (ball 0.747, hoop 0.931, rim_only 0.876). Before retraining, the original detector found
+only 53 of 242 labelled balls in 300 random Hooper frames at 0.5 confidence.
+
+### Frozen re-test: public test videos (103 shots)
+
+Same settings as section 2 (1280 px, every 2nd frame, same hoop boxes).
+
+| | Original | **Current system** |
+|---|---|---|
+| End-to-end accuracy (95% CI) | 77.7% (69–85%) | **92.2% (85–96%)** |
+| Shot detection precision / recall | 98.8% / 82.5% | 99.0% / 96.1% |
+| Make/miss accuracy on found shots | 94.1% | 96.0% |
+| Outdoor / indoor | 66.7% / 88.5% | 90.2% / 94.2% |
+| Free throws / three-pointers | 84.5% / 68.9% | 89.7% / 95.6% |
+| Mean abs. error in makes per video | 1.00 | 0.62 |
+
+Video 2 (outdoor, ground camera, threes), the weakest before, went from 3 to 11 of 12 shots right.
+
+### Frozen re-test: own sessions 2–4 (119 shots)
+
+Same settings as section 5 (960 px, every frame).
+
+| | Old detector, original tracker | Old detector, tracker v2 | **Current system** |
+|---|---|---|---|
+| End-to-end accuracy (95% CI) | 13.4% (8–21%) | 37.8% (30–47%) | **78.2% (70–85%)** |
+| Shot detection precision / recall | 95.7% / 18.5% | 100% / 44.5% | 98.1% / 86.6% |
+| Make/miss accuracy on found shots | 72.7% | 84.9% | 90.3% |
+| Free throws / mid-range / threes | | 60.0% / 38.6% / 22.2% | 76.7% / 70.5% / 86.7% |
+
+Shots found per session: 27/41, 37/39, 39/39; session 2 holds 14 of the 16 shots not found.
+
+### Each tracker change, on dev footage
+
+Replays with the new detector at 960 px:
+
+| Tracker | Old dev videos (98 shots) | Own dev session 1 (43 shots) |
+|---|---|---|
+| Original | 89.8% | 62.8% |
+| Tracker v2 | 89.8% | 86.0% |
+| v2 without switching / top-exit wait / lower arm line | 89.8% / 89.8% / 89.8% | 74.4% / 76.7% / 79.1% |
+
+On side-on footage the changes alter nothing (the same shots right and wrong); on footage from
+under the hoop each adds 7–12 points. An earlier comparison that suggested tracker v2 lost 5 points
+on the old videos had run those portrait videos at 960 px instead of 1280 px; run settings are now
+saved per run and `compare_runs.py` warns when they differ.
+
+### Speed vs accuracy (for a phone app, dev footage)
+
+End-to-end accuracy, old dev videos (portrait) / own session 1 (landscape):
+
+| Image size | 60 fps | 30 fps | 20 fps | PC time per frame |
+|---|---|---|---|---|
+| 640 px | 80.6% / 88.4% | 84.7% / 88.4% | 84.7% / 83.7% | 12.7 ms |
+| 960 px | 89.8% / 86.0% | 88.8% / 88.4% | 90.8% / 88.4% | 19.4 ms |
+| 1280 px | 88.8% / 88.4% | 94.9% / 86.0% | 91.8% / 88.4% | 31.6 ms |
+
+Frame rate barely matters, and landscape footage holds at 640 px; portrait video needs at least
+960 px. Target for the app: landscape filming, 960 px at 20–30 fps, with 640 px at 30 fps as the
+fallback. Speed on the iPhone itself is not yet measured. Differences of 2–3 points here are one or
+two shots.

@@ -98,6 +98,18 @@ Assign the split **before** looking at any tracker output on that session.
 - [ ] **Test sessions**: label them blind later with `python scripts/label_shots.py`, before
       running the tracker on them
 
+## Lessons from the first sessions (2026-10-05, indoor)
+
+- **A second hoop in the background fools auto-calibration.** The far-wall hoop was picked in
+  3 of 4 videos. If another hoop is visible, mark the hoop by hand
+  (`scripts/mark_hoop.py ... --videos-dir data/own_footage/raw --out data/own_footage/hoop_overrides.json`).
+  The app's "tap the hoop" setup step exists for exactly this reason.
+- **Keep one ball in play for test sessions.** Session 1 had two balls going at once; it became
+  the dev session instead.
+- **The current detector sees "balls" on heads (dark hair, caps) and legs (calf sleeves)** in this
+  gym, often at 60–80% confidence. That is a detector problem, not a filming one, and the reason
+  own-footage frames are needed for training.
+
 ## Privacy
 
 If other people appear in the video, ask them first, and don't publish clips of them without

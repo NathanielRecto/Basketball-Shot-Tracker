@@ -1,7 +1,7 @@
 from shottracker.geometry import Box
 from shottracker.pipeline import ShotPipeline
 from shottracker.sim import DEFAULT_HOOP, ScriptedDetector, ShotSpec, detections_from_stream, simulate_stream
-from shottracker.tracking import StaticSuppressor
+from shottracker.tracking import BallTracker, StaticSuppressor
 from shottracker.types import Detection, Outcome
 
 FPS = 30
@@ -40,7 +40,7 @@ def test_non_ball_detections_pass_through():
     assert out == [hoop]
 
 
-def _decoy_run(suppress_static):
+def _decoy_run(suppress_static, **tracker_kw):
     # Reproduces video_01: the real ball goes undetected for a while, the tracker latches onto a
     # permanent "ball" on the rim bracket, and then ignores the real ball once it reappears.
     stream = simulate_stream(DEFAULT_HOOP, [ShotSpec(offset=0.0), ShotSpec(offset=1.5, release=(300, 400))],
@@ -52,13 +52,19 @@ def _decoy_run(suppress_static):
             frame = [d for d in frame if d.label != "ball"]
         dets.append(frame + [decoy])
     pipe = ShotPipeline(ScriptedDetector(dets), hoop=DEFAULT_HOOP, suppress_static=suppress_static)
+    pipe.tracker = BallTracker(**tracker_kw)
     for t, _ in stream:
         pipe.step(t, None)
     return [e.outcome for e in pipe.events]
 
 
-def test_static_decoy_next_to_the_rim_hides_shots_without_the_filter():
-    assert _decoy_run(suppress_static=False) == []
+def test_static_decoy_next_to_the_rim_hides_shots_without_the_filter_or_track_switching():
+    assert _decoy_run(suppress_static=False, switch_speed=float("inf")) == []
+
+
+def test_track_switching_alone_escapes_the_static_decoy():
+    # The released shot rises fast while the decoy never moves, so the tracker jumps to it.
+    assert _decoy_run(suppress_static=False) == [Outcome.MADE, Outcome.MISSED]
 
 
 def test_pipeline_ignores_a_static_decoy_next_to_the_rim():

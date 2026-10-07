@@ -38,6 +38,18 @@ inherit those terms. Dataset images are NOT committed to this repository (`data/
 * Note: the images are frames from third-party videos (e.g. YouTube). CC BY covers the
   annotator's contribution; do not redistribute the images themselves.
 
+### "Basketball Detection v6" (v1) by the Roboflow user "Hooper"
+
+* Source: https://universe.roboflow.com/hooper-ibdsr/basketball-detection-v6
+* License: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+* Used for: the second detector (`runs/detect/combined_v1`, built by
+  `scripts/build_combined_dataset.py`), together with the hotshot dataset above. Phone video of
+  indoor gyms with many people on court; every 8th of its 48,110 frames was used.
+* Changes: its `ball` boxes are used as `ball`; its `hoop` boxes (which cover the rim only) became a
+  separate `rim_only` class so they never mix with the rim-and-net `hoop` boxes; its `holder` and
+  `scorer` (people) boxes were dropped. No boxes were edited.
+* Note: do not redistribute the images themselves.
+
 ## Evaluation videos
 
 * Source: the 16 raw test videos linked from the "Testing Dataset" table of
