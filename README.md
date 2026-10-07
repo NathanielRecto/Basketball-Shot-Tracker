@@ -199,6 +199,7 @@ wrongly called shot with its timestamp.
 | `scripts/replay_eval.py --errors` | Scores the current code against labels in seconds, with context for each error |
 | `scripts/replay_all.py` | Compares settings across videos; flags shots that match no visible arc |
 | `scripts/eval_synthetic.py` | Stress-tests the judging logic on simulated shots with noise and missed detections |
+| `scripts/export_app_fixtures.py` | Exports settings + golden test cases the phone app's port must reproduce exactly ([docs/app_port.md](docs/app_port.md)) |
 | `scripts/compare_runs.py` | Scores several runs (e.g. old vs new tracker or detector) on the same labelled shots, side by side |
 | `scripts/make_report.py` | Rebuilds every figure and metric in `docs/RESULTS.md` (sections 1–4) |
 
@@ -272,7 +273,7 @@ src/shottracker/
   pipeline.py      glue              render.py / video.py / cli.py
   sim.py           simulated shots for tests and the demo
 scripts/           training, labelling, hoop marking, evaluation, debugging
-tests/             87 tests
+tests/             94 tests
 docs/labeling.md   how to label evaluation videos
 ```
 
