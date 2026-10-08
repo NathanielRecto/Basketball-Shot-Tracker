@@ -256,3 +256,27 @@ def test_shot_logic_judges_an_arc_that_was_above_the_frame_as_one_flight():
         events += sd.update(t, BallObs(t, x(t), y(t), 30) if seen else None, hoop)
     assert not any(m.startswith("abort") or "rim_bounce" in m for _, m in sd.log), sd.log
     assert [e.outcome for e in events] == [Outcome.MADE]
+
+
+def test_shot_logic_calls_a_ball_that_bounces_back_out_at_net_height_a_miss():
+    # Own footage: a ball crossing the rim line near the centre, then knocked back towards the shooter
+    # off the back of the rim, falls away beside the net. It must not count as a make.
+    from shottracker.shot_logic import ShotDetector
+    from shottracker.types import BallObs
+
+    hoop = Box(500, 300, 620, 460)  # rim line y = 324, centre x = 560
+    fps = 60
+    for back_px, want in ((0, Outcome.MADE), (110, Outcome.MISSED)):  # 110 px = 0.92 hoop widths
+        sd, events = ShotDetector(), []
+        for k in range(120):
+            t = k / fps
+            if t <= 1.0:  # falling from an apex at t = 0, through the rim line at the centre at t = 1.0
+                r = 1.0 - t
+                obs = BallObs(t, 560 + 300 * r, 324 - 600 * r + 300 * r * r, 30)
+            elif t <= 1.3:
+                u = (t - 1.0) / 0.3
+                obs = BallObs(t, 560 + back_px * u, 324 + 120 * u, 30)  # slowed in the net, or knocked back out
+            else:
+                obs = None
+            events += sd.update(t, obs, hoop)
+        assert [e.outcome for e in events] == [want], (back_px, sd.log)

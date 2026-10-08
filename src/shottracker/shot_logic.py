@@ -52,6 +52,7 @@ class _Pending:
     def __init__(self, **kw):
         self.__dict__.update(kw)
         self.rim_out = False
+        self.bounced_out = False
 
 
 class ShotDetector:
@@ -184,7 +185,7 @@ class ShotDetector:
         h = self._hoop
         return _Pending(
             t_release=release_t, release_angle=rel_angle, fit=fit, t_apex=t_apex,
-            t_cross=t_cross, offset=(x_cross - h.cx) / (h.w / 2), method=method,
+            t_cross=t_cross, x_cross=x_cross, offset=(x_cross - h.cx) / (h.w / 2), method=method,
             entry_angle=entry, deadline=deadline, hoop=h,
             trajectory=[(o.t, o.x, o.y) for o in flight if o.t >= release_t - 1e-9],
         )
@@ -356,6 +357,7 @@ class ShotDetector:
                     # Dropped in after the rim: confirm like any crossing (pop-out, net braking).
                     p.trajectory = p.trajectory + [(o.t, o.x, o.y) for o in self._buf if o.t > p.trajectory[-1][0]]
                     p.t_cross, p.offset, p.method, p.rim_out = tc, off, "rattle", False
+                    p.x_cross, p.bounced_out = prev.x + f * (ball.x - prev.x), False
                     p.deadline = tc + cfg.confirm_s
                     self._state = _State.CONFIRM
                     return []
@@ -383,6 +385,8 @@ class ShotDetector:
                 if abs(p.offset) <= cfg.make_halfwidth and getattr(p, "rattles", 0) < cfg.max_rattles:
                     return self._start_rattle(t, p, "rim_out")
                 return self._finish(t)
+            if ball.y <= h.y2 and self._moved_back(p, ball):
+                p.bounced_out = True
         if t >= p.deadline:
             return self._finish(t)
         return []
@@ -403,6 +407,14 @@ class ShotDetector:
             den += dt * dt
             num += dt * (q[1] - my)
         return None if den == 0 else num / den / self._hoop.h
+
+    def _moved_back(self, p: _Pending, ball: BallObs) -> bool:
+        """The ball is back towards where it came from by ``back_out_frac`` hoop widths since the crossing."""
+        pre = [q for q in p.trajectory if p.t_cross - 0.15 <= q[0] < p.t_cross]
+        if len(pre) < 2 or pre[-1][1] == pre[0][1]:
+            return False
+        back = (p.x_cross - ball.x) if pre[-1][1] > pre[0][1] else (ball.x - p.x_cross)
+        return back / self._hoop.w >= self.cfg.back_out_frac
 
     def _fell_past_rim(self, p: _Pending) -> bool:
         """True when the ball is clearly seen falling after the crossing without being braked.
@@ -427,6 +439,8 @@ class ShotDetector:
         through = abs(p.offset) <= cfg.make_halfwidth
         if through and p.rim_out:
             outcome, reason = Outcome.MISSED, "rim_out"
+        elif through and p.bounced_out:
+            outcome, reason = Outcome.MISSED, "rim_bounce"
         elif through and self._fell_past_rim(p):
             outcome, reason = Outcome.MISSED, "fell_past_rim"
         elif through:

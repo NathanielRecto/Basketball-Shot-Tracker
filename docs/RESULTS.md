@@ -387,9 +387,33 @@ was out of view for 0.8–1.2 s:
 
 These are dev numbers: the fixes were designed by looking at session 2.
 
-### What is left
+### Then: made / missed calls
 
-Finding shots is no longer the main problem; calling them is. Of the 23 errors left on own footage,
-20 are wrong made/missed calls: 12 misses called made (some bounce off the back of the rim and fall
-away at net height, moving back towards the shooter) and 8 makes called "fell past the rim" by the
-net-braking check. That is the next thing to work on.
+With shots now found, 20 of the 23 errors left on own footage were wrong made/missed calls. For
+every matched dev shot (255: own sessions and public dev videos) the ball's motion in the 0.45 s
+after it crossed the rim line was measured and compared between right and wrong calls:
+
+* **Misses called made, bounced back out.** Five of them moved back towards the shooter by 0.9–1.4
+  hoop widths while still at net height: they hit the back of the rim or the board and fell away
+  beside the net. No correctly called make moved back more than 0.62 hoop widths. New rule: moving
+  back by `back_out_frac` = 0.75 hoop widths before dropping below the net is a miss (`rim_bounce`).
+* **Makes called "fell past the rim".** The net-braking check demoted a make whenever the ball was
+  not slowed at all after the crossing (falling speed after / before >= 1.0). Eight own-footage
+  makes reached 1.1–1.35 going through the net; balls that really fell past were mostly 1.8–2.7,
+  two at 1.25. `net_brake_ratio` was raised to 1.3, chosen with the simulator in mind:
+
+| Rule A (bounced back out) / net-braking ratio | Own footage (162) | Public dev (98) | Synthetic, noise 0 / 1.5 / 3 / 5 px (fall-past caught) |
+|---|---|---|---|
+| Before: off / 1.0 | 85.8% | 94.9% | 96.0 / 95.8 / 95.5 / 92.8% (63 / 63 / 63 / 46%) |
+| On / 1.0 | 88.9% | 94.9% | unchanged |
+| On / 1.2 | 90.1% | 94.9% | 96.0 / 95.8 / 95.5 / 92.2% (63 / 63 / 63 / 41%) |
+| **On / 1.3 (chosen)** | **92.0%** | **93.9%** | 96.0 / 95.8 / 95.5 / 91.5% (63 / 63 / 63 / 34%) |
+| On / 1.5 | 93.2% | 93.9% | 95.8 / 95.0 / 94.2 / 90.2% (61 / 56 / 51 / 22%) |
+
+Rule A costs nothing anywhere. The ratio is a trade-off: 1.3 keeps the simulator's fall-past
+detection intact at realistic noise and costs one public dev shot; 1.5 would add two more own-footage
+shots but weaken fall-past detection at every noise level. These are dev numbers, tuned on the very
+shots they are measured on, so they overstate what fresh footage will show.
+
+Still unexplained: 9 misses called made (rim rattles, balls lost right at the rim) with nothing
+that separates them from correct makes in these measurements.

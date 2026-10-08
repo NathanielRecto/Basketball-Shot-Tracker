@@ -43,7 +43,12 @@ class ShotConfig:
     net_window_s: float = 0.25
     net_min_points: int = 4
     net_min_speed: float = 3.0  # hoop heights / s
-    net_brake_ratio: float = 1.0
+    # was 1.0; own footage: some makes reached 1.1-1.35 through the net. 1.3 keeps the simulator's fall-past
+    # detection intact at realistic noise (1.5 gained two dev shots but weakened it); see RESULTS.md section 7.
+    net_brake_ratio: float = 1.3
+    # Bounced back out: after the crossing, a ball that moves back towards where it came from by this many
+    # hoop widths while still at net height hit the back of the rim or the board (dev makes reached 0.62).
+    back_out_frac: float = 0.75
     reentry_margin: float = 0.25  # of hoop height above rim line => ball came back out
     rebound_px: float = 0.35  # of hoop height reversal that signals a bounce off the rim
     rebound_zone: float = 1.0  # of hoop height; reversal must happen this close to the rim line
