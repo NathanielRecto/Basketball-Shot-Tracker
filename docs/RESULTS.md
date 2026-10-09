@@ -158,7 +158,7 @@ This measures the logic on the project's own simulator, not real-world accuracy.
 ## 5. Own iPhone footage (October 2026)
 
 The 16 public videos above are mostly side-on views of one shooter. To test the system on the
-footage it is meant for, four indoor sessions were filmed with an iPhone 11 on a tripod
+footage it is meant for, four indoor sessions were filmed with an iPhone 11 (0.5× ultra-wide lens) on a tripod
 (1080p, 60 fps, landscape): **three people taking turns** shooting free throws, mid-range shots
 and threes, with the camera on the **sideline**: hoop at the top left of the frame, shooters on the
 right, and the rim only about a fifth of the frame below the top edge. The raw
@@ -417,3 +417,103 @@ shots they are measured on, so they overstate what fresh footage will show.
 
 Still unexplained: 9 misses called made (rim rattles, balls lost right at the rim) with nothing
 that separates them from correct makes in these measurements.
+
+## 8. More detector training did not help shot calls (v3, v4)
+
+Two retrained detectors were compared with detector v2 on the **same tracking and judging code**,
+on dev footage only. Both were fine-tuned from v2's weights for 8 more epochs at a small learning
+rate (AdamW 0.0003, no warm-up; `scripts/train_detector.py --optimizer --lr0 --lrf --warmup-epochs`).
+
+| | v2 (kept) | v3: 8 more epochs, same data | v4: + 600 hand-checked own frames (x3) |
+|---|---|---|---|
+| Validation mAP50 / mAP50-95 (880 images) | 0.851 / 0.433 | **0.866 / 0.442** | 0.849 / 0.424 |
+| Own sessions, shot calls | 92.0% (1-4) | 90.7% (1-4) | 89.7% (session 3, held out) vs v2 92.3% |
+| Public dev videos, shot calls | **93.9%** | 88.8% | 85.7% |
+
+* **v3**: better on the validation images, which come from the same datasets as the training
+  images, but it saw the ball in fewer frames of the public videos (up to 5 points fewer), losing
+  shots there. More epochs on the same data specialised it.
+* **v4** was trained on 600 frames from own sessions 1, 2 and 4 with every ball and hoop boxed by hand
+  (`scripts/sample_box_frames.py`, `scripts/box_labeler.py`, `scripts/add_own_frames.py`); session 3
+  was held out. On session 3's 200 hand-labelled frames it is the better detector (balls found at
+  confidence 0.15: 87.7% vs 82.4%; false balls 5 vs 12; hoop box right in 200/200 frames vs 0/200,
+  since v2 calls gym hoops `rim_only`). But it saw the ball in 4-16 points fewer frames on every
+  public video and lost 8 public dev shots, and it does not find the hoop in a second gym at all
+  (section 10): one gym's frames taught it one gym.
+* The hand labels also measured v2 directly: on 800 frames picked to be hard, v2 found 79.8% of the
+  860 balls and drew 10 boxes that were not balls. Its weakness is balls in flight, not false balls.
+* Validation mAP is not the deciding number; shot calls on footage the model never saw are.
+  v2 stays the detector. Training on footage from many places, each frame counted once, is the
+  route for a future detector.
+
+Frame labelling convention for own footage: every ball (in flight, in hands, on the floor; only the
+visible part when cut off), the hoop being shot at as rim plus net; far-wall hoops were not boxed.
+
+## 9. First-look test in a second gym (October 2026)
+
+Seven new sessions were filmed in a **second gym** that no detector, rule or threshold had seen (one
+shooter, one ball, iPhone 11 0.5x lens on a tripod, rim about a third down the frame). The split was
+fixed before anything ran on them: sessions 6, 7 and 8 (30 free throws, 30 mid-range, 30 threes) are
+**test**; four freestyle sessions (5, 9, 10, 11; 102 shots) are dev. Shots were labelled blind, the
+hoop marked by hand (as in the app), and the system frozen and fingerprinted before a single run:
+Python commit c78a239, detector v2 (sha256 e90e448a...), 960 px, every frame, ball confidence 0.15.
+
+| Test sessions 6-8, 90 shots | Result |
+|---|---|
+| **End-to-end accuracy** (found and called right) | **85.6%** (95% CI 77-91%) |
+| Shot detection precision / recall | 100% / 96.7% (87 of 90 found, none invented) |
+| Make/miss accuracy on found shots | 88.5% (9 makes called missed, 1 miss called made) |
+| Free throws / mid-range / threes | 76.7% / 90.0% / 90.0% |
+
+This is the cleanest number in the project: new place, new camera positions, frozen system, scored
+once. 7 of the 13 errors are makes demoted by the "fell past the rim" check, 4 of them free throws.
+Sessions 6-8 are now used; changes after this are dev results until new footage is filmed.
+
+## 10. After the test: the net catches the ball (dev), and finding the hoop automatically
+
+**Net catch.** Studied on dev footage only (own sessions 1-5, 9-11 and the public dev videos): the
+makes wrongly demoted as "fell past the rim" reached the rim moving fast sideways (6.5-8 hoop
+widths/s) and lost nearly all of it after the crossing (kept -0.2 to 0.35 of it): the net stopped
+them. Balls that really fell past kept moving sideways (the one fast one kept 1.3x). New check: a
+make is not demoted when the ball came in at `net_catch_min_vx` = 3 widths/s or more and kept at
+most `net_catch_ratio` = 0.5 of that sideways speed.
+
+| Dev | Before | With the net-catch check |
+|---|---|---|
+| Second gym, sessions 5, 9-11 (102 shots) | 89.2% | **93.1%** |
+| First gym, sessions 1-4 (162 shots) | 92.0% | 93.2% |
+| Public dev videos (98 shots) | 93.9% | 93.9% |
+| Synthetic benchmark (fall-past caught) | 96.0 / 95.8 / 95.5 / 91.5% | identical |
+
+Dev numbers: the rule was designed on these shots. It needs new test footage to be measured.
+
+**Finding the hoop.** Detector v2 sees gym hoops (and the hoops in the public videos) as `rim_only`, a
+rim box without the net, and almost never as the full hoop class. The hoop finder
+(`calibration.find_hoop`, used by `--calibrate-hoop`; a hand-marked hoop still overrides it) takes the
+biggest rim in each of 60 frames (the nearest hoop looks biggest), the median over frames, and extends
+it down over the net by 1.27 rim widths, the median of the hand-marked dev hoops. If the full hoop class
+is found, the earlier consensus method is used instead. It also reports how clear the choice was:
+the area of the biggest rim at least one rim width away from the chosen one, relative to it.
+
+| Hand-marked hoop vs found hoop | First gym (1-4) | Second gym dev (5, 9-11) | Second gym test (6-8) |
+|---|---|---|---|
+| Biggest rim + net (detector v2) | right hoop 4/4, IoU 0.93 | 4/4, IoU 0.81-0.91 | 3/3, IoU 0.87-0.92 |
+| Detector v4's hoop class | 4/4, 0.97 (trained there) | 1/4 | 0/3 (not detected) |
+| "Second hoop" ratio | 0.06-0.08 (small far-wall hoop) | 0.83 in session 11 only: a second backboard of similar size in view | 0.04-0.06 |
+
+On the public dev videos it finds the same hoop as the boxes used for every earlier result (IoU 0.62-0.85;
+looser, because those portrait videos see the net from other angles).
+
+Shot calls with the found hoop instead of the hand-marked one (dev replays, current code):
+
+| | Hand-marked hoop | Found hoop |
+|---|---|---|
+| First gym, sessions 1-4 | 93.2% | 93.2% (identical) |
+| Public dev videos | 93.9% | 93.9% (identical) |
+| Second gym dev, sessions 5, 9-11 | 93.1% | 90.2% (3 shots: 2 not found, 1 wrong call) |
+
+The second gym's nets are shorter (hand-marked boxes 1.15-1.31 times as tall as wide, against 1.32-1.38 in
+the first gym), so the found box is 10-20 px too tall there, and the shot logic measures its thresholds
+in hoop heights. In the app the found hoop is therefore a suggestion the player confirms (pulling the
+bottom edge to the bottom of the net). The lasting fix is to measure the shot rules in rim widths,
+which the detector finds consistently, instead of hoop heights, which depend on the net.

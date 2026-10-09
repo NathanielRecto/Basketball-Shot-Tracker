@@ -49,6 +49,11 @@ class ShotConfig:
     # Bounced back out: after the crossing, a ball that moves back towards where it came from by this many
     # hoop widths while still at net height hit the back of the rim or the board (dev makes reached 0.62).
     back_out_frac: float = 0.75
+    # Caught by the net: a make is not demoted as 'fell past the rim' when the ball reached the rim moving sideways
+    # at least net_catch_min_vx hoop widths/s and kept at most net_catch_ratio of that speed after the crossing.
+    # Dev data: wrongly demoted makes came in at 6.5-8 widths/s and kept -0.2..0.35; balls really falling past kept ~1.3.
+    net_catch_min_vx: float = 3.0
+    net_catch_ratio: float = 0.5
     reentry_margin: float = 0.25  # of hoop height above rim line => ball came back out
     rebound_px: float = 0.35  # of hoop height reversal that signals a bounce off the rim
     rebound_zone: float = 1.0  # of hoop height; reversal must happen this close to the rim line

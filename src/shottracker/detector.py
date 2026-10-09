@@ -6,11 +6,13 @@ from typing import Dict, List, Optional, Sequence
 from .geometry import Box
 from .types import Detection
 
-# Class names found in common public basketball datasets -> our two labels.
+# Class names found in common public basketball datasets -> our labels. "rim_only" (a rim box without the
+# net, from the Hooper data) is only used to find the hoop once per video (calibration.find_hoop).
 DEFAULT_ALIASES: Dict[str, str] = {
     "basketball": "ball", "ball": "ball", "bball": "ball", "sports ball": "ball",
     "hoop": "hoop", "rim": "hoop", "basket": "hoop", "basketball hoop": "hoop",
     "basketball-hoop": "hoop", "basketball_hoop": "hoop", "ring": "hoop",
+    "rim_only": "rim_only",
 }
 
 

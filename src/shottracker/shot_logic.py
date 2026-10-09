@@ -393,6 +393,11 @@ class ShotDetector:
 
     def _vertical_speed(self, pts: List[Tuple[float, float]]) -> Optional[float]:
         """Least-squares downward speed of (t, y) points, in hoop heights per second."""
+        s = self._slope(pts)
+        return None if s is None else s / self._hoop.h
+
+    def _slope(self, pts: List[Tuple[float, float]]) -> Optional[float]:
+        """Least-squares d(value)/dt of (t, value) points, in pixels per second."""
         if len(pts) < 2:
             return None
         # Plain loops, not sum() / ** 2: the phone app's port must reproduce these bits exactly.
@@ -406,7 +411,7 @@ class ShotDetector:
             dt = q[0] - mt
             den += dt * dt
             num += dt * (q[1] - my)
-        return None if den == 0 else num / den / self._hoop.h
+        return None if den == 0 else num / den
 
     def _moved_back(self, p: _Pending, ball: BallObs) -> bool:
         """The ball is back towards where it came from by ``back_out_frac`` hoop widths since the crossing."""
@@ -432,7 +437,17 @@ class ShotDetector:
         min_pre = cfg.net_min_speed if p.method == "rattle" else 0.0
         if v_pre is None or v_post is None or v_pre <= min_pre:
             return False
-        return v_post >= cfg.net_min_speed and v_post >= cfg.net_brake_ratio * v_pre
+        if not (v_post >= cfg.net_min_speed and v_post >= cfg.net_brake_ratio * v_pre):
+            return False
+        # Caught by the net: from the side, a shot reaches the rim moving fast sideways. The net stops that;
+        # a ball falling past the rim keeps it. So a ball that lost most of its sideways speed went in.
+        x_pre = [(q[0], q[1]) for q in p.trajectory if p.t_cross - 0.15 <= q[0] < p.t_cross]
+        x_post = [(o.t, o.x) for o in self._buf if p.t_cross < o.t <= p.t_cross + cfg.net_window_s]
+        sx_pre, sx_post = self._slope(x_pre), self._slope(x_post)
+        if sx_pre is not None and sx_post is not None and abs(sx_pre) / self._hoop.w >= cfg.net_catch_min_vx:
+            if abs(sx_post) <= cfg.net_catch_ratio * abs(sx_pre):
+                return False
+        return True
 
     def _finish(self, t: float) -> List[ShotEvent]:
         p, cfg = self._pending, self.cfg

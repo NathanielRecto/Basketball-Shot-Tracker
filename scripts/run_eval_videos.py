@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from shottracker.calibration import calibrate_hoop, save_hoop_preview  # noqa: E402
+from shottracker.calibration import find_hoop, save_hoop_preview  # noqa: E402
 from shottracker.cli import analyse_video  # noqa: E402
 from shottracker.detector import YoloDetector  # noqa: E402
 from shottracker.geometry import Box  # noqa: E402
@@ -67,16 +67,20 @@ def main():
         detector.imgsz = a.imgsz or (1280 if h > w else 960)
         Path(out_dir, "settings.json").write_text(json.dumps(
             {"weights": a.weights, "imgsz": detector.imgsz, "stride": a.stride, "conf": a.conf}, indent=2))
-        hoop, source, n_cands = None, "per-frame detection", None
+        hoop, source, n_cands, ambiguity = None, "per-frame detection", None, None
         if f.stem in overrides:
             hoop, source = Box(*overrides[f.stem]), "manual override"
         elif a.calibrate_hoop:
-            hoop, n_cands = calibrate_hoop(str(f), detector)
-            source = "calibrated" if hoop else "calibration failed; per-frame detection"
+            found = find_hoop(str(f), detector)
+            hoop, n_cands, ambiguity = found.box, found.candidates, found.ambiguity
+            source = {"hoop": "calibrated (hoop class)", "rim": "calibrated (biggest rim + net)"}.get(
+                found.source, "calibration failed; per-frame detection")
         save_hoop_preview(str(f), hoop, os.path.join(out_dir, "hoop_check.jpg"))
         Path(out_dir, "hoop.json").write_text(json.dumps(
             {"source": source, "box": None if hoop is None else [round(v, 1) for v in (hoop.x1, hoop.y1, hoop.x2, hoop.y2)],
-             "candidates": n_cands}, indent=2))
+             "candidates": n_cands, "ambiguity": None if ambiguity is None else round(ambiguity, 2)}, indent=2))
+        if ambiguity is not None and ambiguity > 0.6:
+            print(f"{f.stem}: two hoops of similar size in view (ambiguity {ambiguity:.2f}); check hoop_check.jpg", flush=True)
         pipe = analyse_video(str(f), detector, pose, out_dir, a.stride, annotate=not a.no_video, quiet=True, hoop=hoop)
         s = pipe.summary()
         print(f"{f.stem}: {s.attempts} shots, {s.made} made | hoop: {source} ({time.time() - t0:.0f}s)", flush=True)

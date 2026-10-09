@@ -280,3 +280,28 @@ def test_shot_logic_calls_a_ball_that_bounces_back_out_at_net_height_a_miss():
                 obs = None
             events += sd.update(t, obs, hoop)
         assert [e.outcome for e in events] == [want], (back_px, sd.log)
+
+
+def test_a_make_whose_sideways_motion_the_net_stopped_is_not_called_fell_past_the_rim():
+    # Own footage from the sideline: a shot reaches the rim moving fast sideways and keeps falling fast
+    # (a loose net barely slows it). If the net stopped its sideways motion it went in; if it kept
+    # moving sideways it fell past the rim.
+    from shottracker.shot_logic import ShotDetector
+    from shottracker.types import BallObs
+
+    hoop = Box(500, 300, 620, 460)  # rim line y = 324, centre x = 560, 120 px wide
+    fps = 60
+    for keep_vx, want in ((0.0, Outcome.MADE), (1.0, Outcome.MISSED)):
+        sd, events = ShotDetector(), []
+        for k in range(24, 120):
+            t = k / fps
+            if t <= 1.0:  # coming down from the right at 800 px/s sideways (6.7 hoop widths/s)
+                r = 1.0 - t
+                obs = BallObs(t, 560 + 800 * r, 324 - 600 * r + 300 * r * r, 30)
+            elif t <= 1.3:  # after the rim line: falling at 800 px/s, sideways speed stopped or kept
+                u = t - 1.0
+                obs = BallObs(t, 560 - 800 * keep_vx * u, 324 + 800 * u, 30)
+            else:
+                obs = None
+            events += sd.update(t, obs, hoop)
+        assert [e.outcome for e in events] == [want], (keep_vx, sd.log)

@@ -8,7 +8,12 @@ Computer-vision system that watches basketball video from a fixed phone camera, 
 shot and calls it **made or missed**, with release and entry angles. Python, YOLOv8, OpenCV,
 NumPy, MediaPipe.
 
-**Held-out test accuracy: 77.7%** end-to-end on 103 hand-labelled shots from 16 public phone
+**Latest first-look test: 85.6%** end-to-end (95% CI 77–91%) on 90 blind-labelled shots filmed in a
+gym the system had never seen (free throws 76.7%, mid-range 90.0%, threes 90.0%; 87 of 90 shots
+found, none invented), with the system frozen and fingerprinted before a single scoring run
+([RESULTS §9](docs/RESULTS.md#9-first-look-test-in-a-second-gym-october-2026)).
+
+Earlier: **77.7%** end-to-end on 103 hand-labelled shots from 16 public phone
 videos (95% CI 69–85%), first look, original system. After retraining the detector on licensed
 phone footage of busy gyms and reworking the tracker, a **re-test of the frozen system** scores
 **92.2%** (95% CI 85–96%) on those same test videos and **78.2%** (95% CI 70–85%) on 119 shots
@@ -283,14 +288,17 @@ docs/labeling.md   how to label evaluation videos
 
 ## Roadmap
 
-1. **Own footage** (in progress): 4 indoor sessions filmed and scored, detector retrained (above).
-   Next: film 2–3 fresh test sessions, ideally another gym or camera spot, with room above the rim
-   ([filming checklist](docs/filming_checklist.md)), for a clean first-look number (both current
-   test sets have been used).
+1. **Own footage**: 11 sessions in two gyms; a first-look test in the second gym scored 85.6%
+   (above). Since then, on dev footage only: a "net caught it" check for makes wrongly called "fell
+   past the rim", and automatic hoop finding from the detector's rim boxes (right hoop in 11 of 11
+   sessions). Next: new test sessions to measure these. More detector training is on hold: two
+   retrained detectors scored better on validation images but worse on shot calls
+   ([RESULTS §8](docs/RESULTS.md#8-more-detector-training-did-not-help-shot-calls-v3-v4)).
 2. **iPhone app** ([Basketball-Shot-Tracker-App](https://github.com/NathanielRecto/Basketball-Shot-Tracker-App), Expo / React Native). Done: tracker logic
    ported and verified identical to Python, hoop setup on the camera, a demo replay through the real tracker,
    session summary, history with FG% trend, session types (FT / mid-range / threes / freestyle), light and dark
-   themes. Next: run detector v2 on the phone for live MADE / MISSED calls.
+   themes, sharing a session as an image. Next: run detector v2 on the phone for live MADE / MISSED calls,
+   with the automatically found hoop as a suggestion the player confirms.
 3. Validate release / entry angles and pose metrics against ground truth.
 4. Layup / close-range shot mode.
 
