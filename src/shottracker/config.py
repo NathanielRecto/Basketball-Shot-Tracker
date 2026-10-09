@@ -59,6 +59,10 @@ class ShotConfig:
     # Dev data: wrongly demoted makes came in at 6.5-8 widths/s and kept -0.2..0.35; balls really falling past kept ~1.3.
     net_catch_min_vx: float = 3.0
     net_catch_ratio: float = 0.5
+    # Rim contact: where a ball "reached the rim" when a flight is only a parabola up to there (shot off the front
+    # rim): within one rim width of the hoop's centre, from this far above the rim line to this far below it.
+    rim_contact_above: float = 0.6
+    rim_contact_below: float = 0.2
     reentry_margin: float = 0.25  # of hoop height above rim line => ball came back out
     rebound_px: float = 0.35  # of hoop height reversal that signals a bounce off the rim
     rebound_zone: float = 1.0  # of hoop height; reversal must happen this close to the rim line

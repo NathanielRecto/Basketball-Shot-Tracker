@@ -289,7 +289,8 @@ from cheapest to hardest:
    still barely moves it).
 3. **Listen**: a swish, a rim hit and a backboard hit sound different, whatever the camera angle.
 4. **Judge front-rim bounces separately**: take the arc up to the rim contact as the shot and judge the
-   bounce or roll afterwards (fixable in the shot logic; needs more dev examples).
+   bounce or roll afterwards. Done in the shot logic since the test (RESULTS §12); dev footage has few such
+   shots, so new footage will show how much it helps.
 5. **Learn make / miss from short clips of the hoop** (net movement, the ball hidden by the mesh), which
    needs far more labelled shots than the ~190 so far, or a second camera.
 

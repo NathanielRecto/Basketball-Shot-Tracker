@@ -542,3 +542,25 @@ in rim widths: one "hoop height" in the settings = `hoop_aspect` rim widths, cho
 the second gym (97 of 102 each, up from 92), so finding the hoop automatically no longer costs shots
 there. The simulator's hoop box is unusually wide (70 x 50 px), so its benchmark moves the most.
 Dev numbers, one value picked from four on these shots: new test footage is the real check.
+
+## 12. Shots off the front rim (dev)
+
+Three test shots were not counted, all of which hit the front rim first (one came back to the
+shooter, one rolled forward and fell outside the net, one went off the backboard and in; README).
+Off the front rim a ball is deflected sideways rather than bounced up, so the bounce detector does not
+fire, the tracker follows the ball on, and arc + deflection + fall is no parabola: the shot logic
+discarded the whole attempt as "not parabolic". Now, when a flight fails that check, the arc up to
+where the ball first reached the rim (within one rim width of the hoop's centre, from 0.6 rim widths
+above the rim line to 0.2 below; `rim_contact_above` / `rim_contact_below`) is fitted on its own. If
+that is a clean arc, the shot is counted as one that hit the rim and judged by where the ball goes:
+through the hoop (made, "rattled in"), outside it (missed) or back up (rim out).
+
+| Dev | Without | With |
+|---|---|---|
+| First gym, sessions 1-4 (hand / found hoop) | 152 / 152 | 153 / 153 |
+| Second gym dev, sessions 5, 9-11 | 97 / 97 | 97 / 97 |
+| Public dev videos (hand / found hoop) | 92 / 91 | 92 / 92 |
+| Synthetic benchmark | 96.0 / 94.0 / 91.2% | identical |
+
+On dev it was used once (session 2, 3:25: a miss off the rim, now counted and called missed) and
+changed no other call. Dev footage has few front-rim shots, so how much it helps needs new footage.

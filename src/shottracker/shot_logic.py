@@ -254,14 +254,25 @@ class ShotDetector:
         if len(flight) < 2 or cur.t - flight[0].t < cfg.min_flight_s:
             return self._abort(t, "short_flight")
         release_t, rel_angle, fit, t_apex = self._analyse(flight)
+        hit_rim = False
         if fit is not None and (not fit.is_physical or fit.rms > cfg.max_fit_rms * self._u()):
-            return self._abort(t, f"not_parabolic(rms={fit.rms / self._u():.2f}h,n={fit.n},physical={fit.is_physical})")
+            # A shot off the front rim is deflected sideways rather than bounced up, so the tracker follows it on
+            # and arc + deflection + fall is no parabola. If the arc up to where the ball first reached the rim is
+            # one, it was a shot that hit the rim: judge it by where it goes from there, like any rim contact.
+            pre = self._pre_contact(flight)
+            if pre is not None and len(pre) >= cfg.min_fit_points and pre[-1].t - pre[0].t >= cfg.min_flight_s:
+                r2, a2, f2, ta2 = self._analyse(pre)
+                if f2 is not None and f2.is_physical and f2.rms <= cfg.max_fit_rms * self._u():
+                    release_t, rel_angle, fit, t_apex, hit_rim = r2, a2, f2, ta2, True
+                    self.log.append((t, "rim_contact"))
+            if not hit_rim:
+                return self._abort(t, f"not_parabolic(rms={fit.rms / self._u():.2f}h,n={fit.n},physical={fit.is_physical})")
 
         gap = cur.t - prev.t
         t_c: Optional[float] = None
         x_c = 0.0
         method = "interpolated"
-        if gap > cfg.interp_max_gap_s and fit is not None:
+        if gap > cfg.interp_max_gap_s and fit is not None and not hit_rim:  # after a rim contact the arc no longer applies
             tc = fit.time_at_y(rim_y)
             if tc is not None and prev.t - 1e-6 <= tc <= cur.t + 1e-6:
                 t_c, x_c, method = tc, fit.x_at(tc), "fit"
@@ -271,17 +282,27 @@ class ShotDetector:
             f = (rim_y - prev.y) / (cur.y - prev.y)
             t_c, x_c = prev.t + f * gap, prev.x + f * (cur.x - prev.x)
 
-        if fit is not None and fit.is_physical:
+        if fit is not None and fit.is_physical and not hit_rim:
             vx, vy = fit.velocity_at(t_c)
         else:
             vx, vy = cur.x - prev.x, cur.y - prev.y
         entry = math.degrees(math.atan2(vy, abs(vx)))
+        if hit_rim:
+            method = "rattle"
 
         pend = self._build_pending(flight, release_t, rel_angle, fit, t_apex, t_c, x_c, method, entry, t_c + cfg.confirm_s)
         if abs(pend.offset) > cfg.attempt_max_offset:
             return self._abort(t, f"too_far_from_hoop(offset={pend.offset:+.1f})")
         self._pending, self._state = pend, _State.CONFIRM
         return []
+
+    def _pre_contact(self, flight: List[BallObs]) -> Optional[List[BallObs]]:
+        """The flight up to the first point where the ball reached the rim (None if it never came near it)."""
+        cfg, h, rim_y, u = self.cfg, self._hoop, self._rim_y(), self._u()
+        for k, o in enumerate(flight):
+            if abs(o.x - h.cx) <= h.w and rim_y - cfg.rim_contact_above * u <= o.y <= rim_y + cfg.rim_contact_below * u:
+                return flight[:k + 1]
+        return None
 
     def _lost(self, t: float) -> List[ShotEvent]:
         """Ball vanished above the rim line; judge from the fitted arc if it is trustworthy."""

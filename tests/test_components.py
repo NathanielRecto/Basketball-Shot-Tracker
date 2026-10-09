@@ -305,3 +305,27 @@ def test_a_make_whose_sideways_motion_the_net_stopped_is_not_called_fell_past_th
                 obs = None
             events += sd.update(t, obs, hoop)
         assert [e.outcome for e in events] == [want], (keep_vx, sd.log)
+
+
+def test_a_shot_off_the_front_rim_is_counted_not_thrown_away():
+    # Test session 6, 2:07: the ball hits the front rim and comes back towards the shooter. It is deflected
+    # sideways, not bounced up, so the tracker follows it on and arc + deflection is no parabola. The arc up
+    # to the rim is one, so it is a shot: here it falls outside the hoop, a miss.
+    from shottracker.shot_logic import ShotDetector
+    from shottracker.types import BallObs
+
+    hoop = Box(500, 300, 620, 460)  # rim line y = 324, centre x = 560, 120 px wide
+    sd, events, fps = ShotDetector(), [], 60
+    for k in range(39, 150):  # the ball is first seen 0.35 s before it reaches the rim
+        t = k / fps
+        if t <= 1.0:  # coming down from the right onto the front of the rim
+            r = 1.0 - t
+            obs = BallObs(t, 625 + 300 * r, 309 - 600 * r + 300 * r * r, 30)
+        elif t <= 1.6:  # knocked back towards the shooter, then falling outside the hoop
+            s = t - 1.0
+            obs = BallObs(t, 625 + 250 * s, 309 - 100 * s + 300 * s * s, 30)
+        else:
+            obs = None
+        events += sd.update(t, obs, hoop)
+    assert not any(m.startswith("abort") for _, m in sd.log), sd.log
+    assert [(e.outcome, e.reason) for e in events] == [(Outcome.MISSED, "off_target")]
