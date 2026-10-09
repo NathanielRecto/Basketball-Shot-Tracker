@@ -115,9 +115,17 @@ class ShotDetector:
         """
         return _rising_out_of_top(a, b) and c.t - b.t <= self.cfg.top_exit_wait_s and c.y < self._rim_y()
 
+    def _u(self) -> float:
+        """The length unit of every distance setting: hoop_aspect rim widths (the hoop box's width).
+
+        It used to be the hoop box's height, which depends on how long the net is and how it is boxed
+        (0.97-1.60 widths across our videos); the rim is detected consistently.
+        """
+        return self.cfg.hoop_aspect * self._hoop.w
+
     def _rim_y(self) -> float:
         h = self._hoop
-        return h.y1 + self.cfg.rim_line_frac * h.h
+        return h.y1 + self.cfg.rim_line_frac * self._u()
 
     def _reset(self, t: float, cooldown: float) -> None:
         self._state = _State.IDLE
@@ -142,7 +150,7 @@ class ShotDetector:
             start -= 1
         seg = pts[start:]
         apex = min(range(len(seg)), key=lambda i: seg[i].y)
-        tol, still = cfg.rise_tol * h.h, cfg.still_frac * h.h
+        tol, still = cfg.rise_tol * self._u(), cfg.still_frac * self._u()
         j = apex
         while j > 0:
             a, b = seg[j - 1], seg[j]
@@ -165,7 +173,7 @@ class ShotDetector:
         # Outlier rejection: "held ball" points before the release and stray false detections
         # picked up mid-flight both sit off the arc. Drop the worst-fitting point and refit,
         # until the arc fits cleanly and curves the way gravity does (at most half the points are dropped).
-        trim = self.cfg.trim_rms * self._hoop.h
+        trim = self.cfg.trim_rms * self._u()
         max_drop, dropped = len(pts) // 2, 0
         while fit is not None and (fit.rms > trim or not fit.is_physical) and len(pts) > self.cfg.min_fit_points and dropped < max_drop:
             f = fit
@@ -196,7 +204,7 @@ class ShotDetector:
         if ball is None or t < self._cooldown_until:
             return []
         h = self._hoop
-        if ball.y < self._rim_y() - self.cfg.arm_margin * h.h and abs(ball.x - h.cx) <= self.cfg.max_dx * h.w:
+        if ball.y < self._rim_y() - self.cfg.arm_margin * self._u() and abs(ball.x - h.cx) <= self.cfg.max_dx * h.w:
             self._state = _State.FLIGHT
             self._armed_t = t
             self.log.append((t, "arm"))
@@ -220,7 +228,7 @@ class ShotDetector:
             if prev.y < rim_y <= ball.y:
                 return self._cross(t, prev, ball)
             came_down = len(self._buf) >= 3 and self._back_from_top(self._buf[-3], prev, ball)
-            if ball.t - prev.t > cfg.interp_max_gap_s and ball.y < rim_y - cfg.reentry_margin * h.h and not came_down:
+            if ball.t - prev.t > cfg.interp_max_gap_s and ball.y < rim_y - cfg.reentry_margin * self._u() and not came_down:
                 ev = self._reappeared_above(t, ball)
                 if ev:
                     return ev
@@ -232,9 +240,9 @@ class ShotDetector:
         else:
             d = self._desc_max
             if (
-                d.y - ball.y > cfg.rebound_px * h.h
-                and d.y >= rim_y - cfg.rebound_zone * h.h
-                and d.y - self._apex.y > 0.5 * h.h
+                d.y - ball.y > cfg.rebound_px * self._u()
+                and d.y >= rim_y - cfg.rebound_zone * self._u()
+                and d.y - self._apex.y > 0.5 * self._u()
                 and ball.y < rim_y
             ):
                 return self._rebound(t)
@@ -246,8 +254,8 @@ class ShotDetector:
         if len(flight) < 2 or cur.t - flight[0].t < cfg.min_flight_s:
             return self._abort(t, "short_flight")
         release_t, rel_angle, fit, t_apex = self._analyse(flight)
-        if fit is not None and (not fit.is_physical or fit.rms > cfg.max_fit_rms * h.h):
-            return self._abort(t, f"not_parabolic(rms={fit.rms / h.h:.2f}h,n={fit.n},physical={fit.is_physical})")
+        if fit is not None and (not fit.is_physical or fit.rms > cfg.max_fit_rms * self._u()):
+            return self._abort(t, f"not_parabolic(rms={fit.rms / self._u():.2f}h,n={fit.n},physical={fit.is_physical})")
 
         gap = cur.t - prev.t
         t_c: Optional[float] = None
@@ -282,7 +290,7 @@ class ShotDetector:
         if len(flight) < cfg.min_fit_points or flight[-1].t - flight[0].t < cfg.min_flight_s:
             return self._abort(t, f"lost_too_few_points(n={len(flight)})")
         release_t, rel_angle, fit, t_apex = self._analyse(flight)
-        if fit is None or not fit.is_physical or fit.rms > cfg.max_fit_rms * h.h:
+        if fit is None or not fit.is_physical or fit.rms > cfg.max_fit_rms * self._u():
             return self._abort(t, "lost_bad_fit")
         tc = fit.time_at_y(rim_y)
         last = flight[-1]
@@ -310,7 +318,7 @@ class ShotDetector:
         if len(flight) < cfg.min_fit_points:
             return []
         release_t, rel_angle, fit, t_apex = self._analyse(flight)
-        if fit is None or not fit.is_physical or fit.rms > cfg.max_fit_rms * h.h:
+        if fit is None or not fit.is_physical or fit.rms > cfg.max_fit_rms * self._u():
             return []
         tc = fit.time_at_y(rim_y)
         if tc is None or tc < flight[-1].t or tc >= ball.t - 0.02:
@@ -380,7 +388,7 @@ class ShotDetector:
     def _confirm(self, t: float, ball: Optional[BallObs]) -> List[ShotEvent]:
         cfg, h, p = self.cfg, self._hoop, self._pending
         if ball is not None and ball.t > p.t_cross:
-            if ball.y < self._rim_y() - cfg.reentry_margin * h.h and abs(ball.x - h.cx) <= 1.5 * h.w:
+            if ball.y < self._rim_y() - cfg.reentry_margin * self._u() and abs(ball.x - h.cx) <= 1.5 * h.w:
                 p.rim_out = True
                 if abs(p.offset) <= cfg.make_halfwidth and getattr(p, "rattles", 0) < cfg.max_rattles:
                     return self._start_rattle(t, p, "rim_out")
@@ -394,7 +402,7 @@ class ShotDetector:
     def _vertical_speed(self, pts: List[Tuple[float, float]]) -> Optional[float]:
         """Least-squares downward speed of (t, y) points, in hoop heights per second."""
         s = self._slope(pts)
-        return None if s is None else s / self._hoop.h
+        return None if s is None else s / self._u()
 
     def _slope(self, pts: List[Tuple[float, float]]) -> Optional[float]:
         """Least-squares d(value)/dt of (t, value) points, in pixels per second."""

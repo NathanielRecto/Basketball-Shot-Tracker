@@ -1,8 +1,8 @@
 """Tunable thresholds for shot detection.
 
-Distances are expressed relative to the detected hoop box (``h`` = height,
-``w`` = width) so the same settings work at different resolutions and zoom
-levels. Times are in seconds so they do not depend on the video frame rate.
+Distances are expressed relative to the hoop: ``w`` = the hoop box's width (the rim), and
+"hoop heights" (``h``) = ``hoop_aspect`` rim widths, a fixed length rather than the box's own height,
+so the same settings work at different resolutions, zoom levels and net lengths. Times are in seconds so they do not depend on the video frame rate.
 """
 from dataclasses import dataclass
 
@@ -13,6 +13,11 @@ class ShotConfig:
     # The hotshot dataset labels the rim AND the hanging net (boxes ~0.57 w/h), so the rim
     # itself is near the top of the box. Re-check this whenever the hoop labels change.
     rim_line_frac: float = 0.15
+
+    # One "hoop height" in every setting below = this many rim widths. 1.0 = every distance is in rim widths:
+    # the rim is detected consistently, the net's length is not (hoop boxes were 0.97-1.60 widths tall). Chosen
+    # on dev footage from 1.0 / 1.15 / 1.3 / 1.45 (RESULTS.md section 11).
+    hoop_aspect: float = 1.0
 
     # Arming: the ball must get this many hoop-heights above the rim line, and be
     # within this many hoop-widths of the hoop horizontally, to start a shot attempt.

@@ -466,7 +466,10 @@ Python commit c78a239, detector v2 (sha256 e90e448a...), 960 px, every frame, ba
 | Free throws / mid-range / threes | 76.7% / 90.0% / 90.0% |
 
 This is the cleanest number in the project: new place, new camera positions, frozen system, scored
-once. 7 of the 13 errors are makes demoted by the "fell past the rim" check, 4 of them free throws.
+once. 8 of the 13 errors are makes demoted by the "fell past the rim" check (4 free throws, 2 mid-range,
+2 threes); 3 shots were not found and 2 more were wrong calls (a make called a rim bounce, a miss called
+rattled in). `scripts/shot_report.py` draws every shot of this run (what the detector saw, the path
+followed, the call) for review.
 Sessions 6-8 are now used; changes after this are dev results until new footage is filmed.
 
 ## 10. After the test: the net catches the ball (dev), and finding the hoop automatically
@@ -517,3 +520,25 @@ the first gym), so the found box is 10-20 px too tall there, and the shot logic 
 in hoop heights. In the app the found hoop is therefore a suggestion the player confirms (pulling the
 bottom edge to the bottom of the net). The lasting fix is to measure the shot rules in rim widths,
 which the detector finds consistently, instead of hoop heights, which depend on the net.
+
+## 11. Shot rules in rim widths instead of hoop heights (dev)
+
+Every distance in the shot logic (rim line, arm line, fit tolerances, rebound and re-entry margins,
+falling speeds) used to be measured in heights of the hoop box. That height is the rim plus however
+much net the box covers, which varies: hoop boxes were 0.97-1.60 times as tall as wide across our
+videos, and the automatically found hoop (section 10) came out 10-20 px taller than the hand-marked
+one in the second gym. The rim's width is detected consistently, so all distances are now measured
+in rim widths: one "hoop height" in the settings = `hoop_aspect` rim widths, chosen on dev footage:
+
+| Dev shot calls | Hand-marked hoop: gym 1 / gym 2 / public | Found hoop: gym 1 / gym 2 / public | Synthetic 0 / 3 / 5 px |
+|---|---|---|---|
+| Box height (before) | 151 / 95 / 92 | 151 / 92 / 92 | 96.0 / 95.5 / 91.5% |
+| **`hoop_aspect` 1.0 (chosen)** | **152 / 97 / 92** | **152 / 97 / 91** | 96.0 / 94.0 / 91.2% |
+| 1.15 | 150 / 95 / 91 | 150 / 94 / 93 | 94.0 / 93.5 / 90.5% |
+| 1.3 | 152 / 94 / 91 | 151 / 92 / 92 | 88.0 / 92.0 / 87.2% |
+| 1.45 | 150 / 91 / 88 | 150 / 92 / 92 | 83.5 / 87.2 / 86.0% |
+
+(Out of 162 / 102 / 98 shots.) With rim widths the found hoop does as well as the hand-marked one in
+the second gym (97 of 102 each, up from 92), so finding the hoop automatically no longer costs shots
+there. The simulator's hoop box is unusually wide (70 x 50 px), so its benchmark moves the most.
+Dev numbers, one value picked from four on these shots: new test footage is the real check.
