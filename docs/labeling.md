@@ -86,3 +86,32 @@ python scripts/evaluate.py --labels data/own_footage/labels --pred outputs/own_e
 python scripts/compare_runs.py --labels data/own_footage/labels --videos 2 3 4 \
     --run baseline=outputs/own_eval_baseline --run finetuned=outputs/own_eval_finetuned
 ```
+
+## Box labels for training the detector (own dev footage)
+
+Shot labels say *when* a shot happened. Training a detector needs something else: a box around
+every ball and hoop in a picture. These come from **dev sessions only**; the sampler refuses any
+session marked `test` in `data/own_footage/sessions.csv`, so test footage never becomes training data.
+
+```
+python scripts/sample_box_frames.py --sessions 1 2 3 4     # ~200 frames per session, boxes pre-drawn
+python scripts/box_labeler.py                              # check and correct them
+```
+
+The sampler favours frames the current detector finds hard (ball at the top edge, in flight, not
+seen, extra "balls" on people) plus random ones, and pre-draws its ball detections and the session's
+hoop box. Everything lands in `data/own_boxes_v1/` (not in git: the frames show people).
+
+In the labeler, fix every image so that **every basketball and every hoop has a tight box, and
+nothing else does**:
+
+* Delete boxes on heads, hands, lights or anything that is not a ball (right click).
+* Draw missing balls, including spare balls on the floor and balls in hands (drag).
+* Box only the visible part of a ball cut off by the frame edge or behind the net; skip one less
+  than about a third visible. Box blurred balls around the blur's ball shape.
+* Hoops: the hoop being shot at, as rim plus hanging net. Far-wall hoops are not boxed (the
+  convention all 800 frames of `own_boxes_v1` follow).
+* If an image has no ball, it still counts: an image with only the hoop box teaches the detector
+  what is *not* a ball.
+
+Press N when an image is right; progress is saved, so it can be done in several sittings.

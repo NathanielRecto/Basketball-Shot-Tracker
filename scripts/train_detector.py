@@ -37,6 +37,12 @@ def main():
     ap.add_argument("--device", default=None)
     ap.add_argument("--smoke", action="store_true", help="1 epoch on 5%% of the data, to verify the setup")
     ap.add_argument("--resume", default=None, help="path to last.pt of an interrupted run to continue it")
+    # For continuing a finished run from its weights (e.g. detector v2 -> v3): a small start rate and no
+    # warm-up, whose high bias learning rate would jolt an already-trained model. Omitted = Ultralytics defaults.
+    ap.add_argument("--optimizer", default=None, help="e.g. AdamW (default: Ultralytics 'auto')")
+    ap.add_argument("--lr0", type=float, default=None, help="initial learning rate")
+    ap.add_argument("--lrf", type=float, default=None, help="final learning rate as a fraction of lr0")
+    ap.add_argument("--warmup-epochs", type=float, default=None)
     args = ap.parse_args()
 
     from ultralytics import YOLO  # pip install -r requirements-ml.txt
@@ -48,6 +54,8 @@ def main():
         model = YOLO(args.model)
         extra = (dict(epochs=1, fraction=0.05, name=args.name + "_smoke") if args.smoke
                  else dict(epochs=args.epochs, fraction=args.fraction, name=args.name))
+        opt = dict(optimizer=args.optimizer, lr0=args.lr0, lrf=args.lrf, warmup_epochs=args.warmup_epochs)
+        extra.update({k: v for k, v in opt.items() if v is not None})
         model.train(
             data=args.data, imgsz=args.imgsz, batch=args.batch, workers=args.workers,
             patience=args.patience, device=args.device, project=RUNS_DIR, exist_ok=True, **extra,

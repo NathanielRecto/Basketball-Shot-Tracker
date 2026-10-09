@@ -36,7 +36,9 @@ gives about ±6. If you can, film 2 extra test sessions.
 - [ ] Settings → Camera → Formats: **High Efficiency** is fine
 - [ ] Settings → Photos → Transfer to Mac or PC: **Keep Originals**
 - [ ] Before each session: **Do Not Disturb** or **Airplane mode**, so a call can't stop the recording
-- [ ] Use the normal **1×** lens. No zoom, no Slo-mo, no Cinematic mode
+- [ ] Use the **0.5×** ultra-wide lens, the same for every session (all own footage so far is 0.5×,
+      and the system is tuned on it). Keep the hoop and shooter away from the frame edges, where the
+      lens bends straight lines most. No zoom, no Slo-mo, no Cinematic mode
 
 ## Setting up the camera (every session)
 
