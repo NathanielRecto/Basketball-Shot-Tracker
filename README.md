@@ -255,18 +255,58 @@ Nearly all simulated errors are "fall past" misses where the ball is hidden righ
 net braking needs to *see* the ball falling (100% caught when visible, 0% when hidden). This tests
 the logic on the project's own simulator, not real-world accuracy.
 
+## What one sideline camera cannot see
+
+A single camera records a flat picture. Filmed from the sideline, a ball **inside** the net, one
+just **in front of** it and one just **behind** it all line up on the same spot, so whether a ball
+went in has to be inferred from indirect clues: did the net slow it, did the net stop its sideways
+motion, did it come back up. Those clues fail in two ways:
+
+* A make that drops through a loose net without slowing down looks like a ball falling past the rim
+  (and a ball that bounces up and drops in dead centre barely moves the net at all).
+* A miss that comes down just in front of or behind the net looks like a make.
+
+On the second-gym test (90 shots) this was the biggest source of error: **8 of the 13 mistakes were
+makes called "fell past the rim"** and one miss was called made. Three more shots were not counted,
+all of which hit the **front rim** first: one bounced back to the shooter, one rolled forward and fell
+outside the net, and one (a make) went off the front rim, off the backboard and in. Each time the
+bounce was taken as part of the flight, so the path no longer looked like one shot.
+
+<p align="center">
+  <img src="docs/images/sideline_limits.png" width="760" alt="Three test shots cropped to the hoop: a make called a miss, a miss called a make, and a front-rim bounce that was not counted">
+  <br><sub>Three of the test mistakes, cropped to the hoop (orange: the path followed; green: hoop box; red: rim line).
+  Made with <code>scripts/shot_report.py</code>, which draws every shot of a run (what the detector saw, the path
+  followed, the call against the label) with slow-motion clips of each mistake. The full report of the 90 test
+  shots stays local because the frames show people.</sub>
+</p>
+
+Part of this is a limit of the camera position rather than of the code. What would help, roughly
+from cheapest to hardest:
+
+1. **Film at an angle** (about 45 degrees between sideline and baseline, a little higher): the camera then
+   sees partly into the rim, and in front / inside / behind the net separate in the picture.
+2. **Watch the net, not only the ball**: how much the mesh moves after the ball reaches it (a perfect swish
+   still barely moves it).
+3. **Listen**: a swish, a rim hit and a backboard hit sound different, whatever the camera angle.
+4. **Judge front-rim bounces separately**: take the arc up to the rim contact as the shot and judge the
+   bounce or roll afterwards (fixable in the shot logic; needs more dev examples).
+5. **Learn make / miss from short clips of the hoop** (net movement, the ball hidden by the mesh), which
+   needs far more labelled shots than the ~190 so far, or a second camera.
+
 ## Assumptions and limits
 
-* Fixed camera, hoop in frame, filmed from the side. The whole arc should stay in view: in our own
-  footage the rim sits near the top edge, high shots leave the frame, and accuracy is lower (78.2% on
-  re-test vs 92.2% on the public videos, see above). Angles are 2D projections.
+* Fixed camera, hoop in frame, filmed from the side. The whole arc should stay in view: with the rim
+  near the top edge (our first gym), high shots leave the frame and accuracy drops (78.2% on re-test vs
+  92.2% on the public videos); with the rim a third of the way down (second gym) the test reached 85.6%.
+  Whether a ball went into the net is inferred, not seen (section above). Angles are 2D projections.
 * One ball in play. Jump shots and free throws: **layups, bank shots and tip-ins are not
   specifically handled**.
 * A call comes ~0.45 s after the ball crosses the rim (up to ~2 s after a rim contact, while the
   ball settles).
 * Elbow / knee angles from MediaPipe pose are implemented but **not yet validated** on real shots.
 * The "rim line" sits near the top of the hoop box because the training labels cover the rim *and*
-  the net (`rim_line_frac` in `config.py`).
+  the net (`rim_line_frac` in `config.py`). All distances in the shot logic are in rim widths, so a box
+  that covers more or less of the net does not shift them (RESULTS §11).
 
 ## Layout
 
