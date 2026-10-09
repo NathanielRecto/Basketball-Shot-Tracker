@@ -208,6 +208,7 @@ wrongly called shot with its timestamp.
 | `scripts/export_app_fixtures.py` | Exports settings + golden test cases the phone app's port must reproduce exactly ([docs/app_port.md](docs/app_port.md)) |
 | `scripts/compare_runs.py` | Scores several runs (e.g. old vs new tracker or detector) on the same labelled shots, side by side |
 | `scripts/make_report.py` | Rebuilds the figures and metrics in `docs/RESULTS.md` sections 1–4 and the detector v2 training charts |
+| `scripts/shot_report.py` | A picture of every labelled shot of a run (detections, path followed, call vs label) plus slow-motion clips of the mistakes; `--public` crops to the hoop ([test-shot report](docs/shot_report/)) |
 
 ## More detail
 
@@ -276,8 +277,8 @@ bounce was taken as part of the flight, so the path no longer looked like one sh
   <img src="docs/images/sideline_limits.png" width="760" alt="Three test shots cropped to the hoop: a make called a miss, a miss called a make, and a front-rim bounce that was not counted">
   <br><sub>Three of the test mistakes, cropped to the hoop (orange: the path followed; green: hoop box; red: rim line).
   Made with <code>scripts/shot_report.py</code>, which draws every shot of a run (what the detector saw, the path
-  followed, the call against the label) with slow-motion clips of each mistake. The full report of the 90 test
-  shots stays local because the frames show people.</sub>
+  followed, the call against the label) with slow-motion clips of each mistake.
+  <b><a href="docs/shot_report/">All 90 test shots</a></b>, cropped to the hoop so no players are shown.</sub>
 </p>
 
 Part of this is a limit of the camera position rather than of the code. What would help, roughly

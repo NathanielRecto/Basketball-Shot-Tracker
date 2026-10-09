@@ -51,7 +51,10 @@ def main() -> int:
     ap.add_argument("--videos-dir", default=str(ROOT / "data" / "own_footage" / "raw"))
     ap.add_argument("--src", default=str(ROOT / "src"), help="shottracker package folder to judge with (e.g. a frozen copy)")
     ap.add_argument("--title", default="Shot report")
+    ap.add_argument("--note", default="", help="a line under the title, e.g. which code version scored the run")
     ap.add_argument("--no-clips", action="store_true")
+    ap.add_argument("--public", action="store_true", help="crop every picture tightly to the hoop (no people in frame), smaller "
+                    "JPEG cards, and also write README.md (a page GitHub shows) next to index.html")
     ap.add_argument("--pred", default=None, help="folder with session_XX/summary.json from the scored run: the calls shown come "
                     "from there (a replay of debug.json can differ by a shot), the pictures from debug.json")
     a = ap.parse_args()
@@ -76,6 +79,7 @@ def main() -> int:
     except OSError:
         font = bold = ImageFont.load_default()
     videos = find_videos(a.videos_dir)
+    card_w = 360 if a.public else 640
     shots, summary = [], []
 
     for s in a.sessions:
@@ -134,10 +138,13 @@ def main() -> int:
             pad = 1.2 * hoop.w
             x0, x1_ = max(0, int(min(xs) - pad)), min(W, int(max(xs) + pad))
             y0, y1_ = max(0, int(min(ys) - pad)), min(H, int(max(ys) + pad))
-            if x1_ - x0 < 480:
+            if a.public:  # the hoop and just around it: the rim, the net and the ball's last stretch, no players
+                x0, x1_ = max(0, int(hoop.x1 - 1.4 * hoop.w)), min(W, int(hoop.x2 + 1.4 * hoop.w))
+                y0, y1_ = max(0, int(hoop.y1 - 1.3 * hoop.w)), min(H, int(hoop.y2 + 1.6 * hoop.w))
+            elif x1_ - x0 < 480:
                 c = (x0 + x1_) // 2
                 x0, x1_ = max(0, c - 240), min(W, c + 240)
-            if y1_ - y0 < 300:
+            if y1_ - y0 < 300 and not a.public:
                 c = (y0 + y1_) // 2
                 y0, y1_ = max(0, c - 150), min(H, c + 150)
 
@@ -147,7 +154,8 @@ def main() -> int:
                 for tt, x, y, d in dets:
                     if tt <= upto:
                         k = (tt - lo) / (hi - lo)
-                        cv2.circle(img, (int(x), int(y)), max(3, int(d / 6)), (int(255 * (1 - k)), int(200 * k + 40), int(230 * k)), -1)
+                        r = max(2, int(d / 14)) if a.public else max(3, int(d / 6))  # small dots on the tight hoop crop
+                        cv2.circle(img, (int(x), int(y)), r, (int(255 * (1 - k)), int(200 * k + 40), int(230 * k)), -1)
                 pts = np.array([(int(x), int(y)) for tt, x, y in path if tt <= upto], np.int32)
                 if len(pts) > 1:
                     cv2.polylines(img, [pts], False, (40, 140, 255), 2)
@@ -163,7 +171,7 @@ def main() -> int:
             if why:
                 lines.append((f"Why: {why}", font, (90, 90, 90)))
 
-            def wrapped(items, width=612):
+            def wrapped(items, width=card_w - 28):
                 out_lines = []
                 for text, f_, c_ in items:
                     words, cur = text.split(" "), ""
@@ -181,10 +189,10 @@ def main() -> int:
 
             def card(img_bgr):
                 crop = cv2.cvtColor(img_bgr[y0:y1_, x0:x1_], cv2.COLOR_BGR2RGB)
-                scale = 640 / crop.shape[1]
-                crop = cv2.resize(crop, (640, int(crop.shape[0] * scale)))
+                scale = card_w / crop.shape[1]
+                crop = cv2.resize(crop, (card_w, int(crop.shape[0] * scale)), interpolation=cv2.INTER_AREA)
                 head = 14 + 26 * len(lines)
-                im = Image.new("RGB", (640, head + crop.shape[0]), (250, 250, 248))
+                im = Image.new("RGB", (card_w, head + crop.shape[0]), (250, 250, 248))
                 im.paste(Image.fromarray(crop), (0, head))
                 dr = ImageDraw.Draw(im)
                 dr.rectangle([0, 0, 6, head], fill=color)
@@ -193,7 +201,8 @@ def main() -> int:
                 return im
 
             stem = f"s{s:02d}_{int(t * 100):06d}"
-            card(overlay(frame.copy(), hi)).save(out / "cards" / f"{stem}.png")
+            card_file = f"cards/{stem}.jpg" if a.public else f"cards/{stem}.png"
+            card(overlay(frame.copy(), hi)).save(out / card_file, **({"quality": 82} if a.public else {}))
             clip = None
             if status != "correct" and not a.no_clips:
                 frames = []
@@ -209,7 +218,7 @@ def main() -> int:
                 if frames:
                     clip = f"clips/{stem}.webp"
                     frames[0].save(out / clip, save_all=True, append_images=frames[1:], duration=66, loop=0, quality=70)
-            shots.append(dict(session=s, type=stype, t=round(t, 2), status=status, card=f"cards/{stem}.png", clip=clip))
+            shots.append(dict(session=s, type=stype, t=round(t, 2), status=status, card=card_file, clip=clip))
         cap.release()
         summary.append((s, len(labels), n_ok, len(unmatched_l), len(unmatched_p)))
         print(f"{name}: {len(labels)} labelled, {n_ok} correct, {len(unmatched_l)} not found, {len(unmatched_p)} extra")
@@ -246,6 +255,7 @@ figure img {{ width:100%; display:block; }} summary {{ cursor:pointer; padding:6
 .dot {{ display:inline-block; width:10px; height:10px; border-radius:5px; margin:0 5px 0 12px; }}
 </style></head><body><main>
 <h1>{html.escape(a.title)}</h1>
+<p>{html.escape(a.note)}</p>
 <p>Every labelled shot, as the system saw it. On each picture:
 <span class="dot" style="background:#3a6df0"></span>ball detections, early
 <span class="dot" style="background:#e6d23c"></span>late
@@ -258,6 +268,37 @@ figure img {{ width:100%; display:block; }} summary {{ cursor:pointer; padding:6
 <h2>Correct calls ({len(shots) - len(mistakes)})</h2>{sections}
 </main></body></html>"""
     (out / "index.html").write_text(page, encoding="utf-8")
+    if a.public:
+        def md_cell(sh):
+            cell = f'<img src="{sh["card"]}" width="340" alt="shot card">'
+            if sh["clip"]:
+                cell += f'<br><details><summary>slow motion</summary><img src="{sh["clip"]}" width="340" alt="slow-motion clip"></details>'
+            return cell
+
+        def md_grid(items, cols=3):
+            rows_ = ["<table>"]
+            for i in range(0, len(items), cols):
+                rows_.append("<tr>" + "".join(f'<td valign="top">{md_cell(sh)}</td>' for sh in items[i:i + cols]) + "</tr>")
+            return "\n".join(rows_ + ["</table>"])
+
+        lines_md = [f"# {a.title}", "", *([a.note, ""] if a.note else []),
+                    "Every labelled shot, as the system saw it, cropped to the hoop so no players are shown. On each picture:",
+                    "dots = ball detections (blue early, yellow late), orange = the path the tracker followed, green = hoop box,",
+                    "red = rim line, white x = where the ball crossed it. Header: your label against the system's call.", "",
+                    "| Session | Shots | Correct | Wrong call | Not found | Extra | Accuracy |", "|---|---|---|---|---|---|---|"]
+        lines_md += [f"| Session {s_} | {n} | {ok} | {n - ok - nf} | {nf} | {ex} | **{100 * ok / n:.1f}%** |" for s_, n, ok, nf, ex in summary]
+        lines_md += ["", "| Shot type | Shots | Correct | Accuracy |", "|---|---|---|---|"]
+        for ty in types:
+            g = [sh for sh in shots if sh["type"] == ty and sh["status"] != "extra"]
+            ok = sum(sh["status"] == "correct" for sh in g)
+            lines_md.append(f"| {ty} | {len(g)} | {ok} | **{100 * ok / len(g):.1f}%** |")
+        lines_md += ["", f"## Mistakes ({len(mistakes)})", "", md_grid(mistakes), "", f"## Correct calls ({len(shots) - len(mistakes)})", ""]
+        for s_ in a.sessions:
+            g = [sh for sh in shots if sh["session"] == s_ and sh["status"] == "correct"]
+            lines_md += [f"<details><summary>Session {s_} ({len(g)} shots)</summary>", "", md_grid(g), "", "</details>", ""]
+        lines_md += ["Made with `scripts/shot_report.py --public`. Full-frame cards (whole court and players) can be made locally",
+                     "without `--public`."]
+        (out / "README.md").write_text("\n".join(lines_md) + "\n", encoding="utf-8")
     print(f"wrote {out / 'index.html'} ({len(shots)} shots, {len(mistakes)} mistakes)")
     return 0
 

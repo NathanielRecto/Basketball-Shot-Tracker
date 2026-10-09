@@ -469,7 +469,7 @@ This is the cleanest number in the project: new place, new camera positions, fro
 once. 8 of the 13 errors are makes demoted by the "fell past the rim" check (4 free throws, 2 mid-range,
 2 threes); 3 shots were not found and 2 more were wrong calls (a make called a rim bounce, a miss called
 rattled in). `scripts/shot_report.py` draws every shot of this run (what the detector saw, the path
-followed, the call) for review.
+followed, the call) for review: [every test shot, cropped to the hoop](shot_report/).
 Sessions 6-8 are now used; changes after this are dev results until new footage is filmed.
 
 ## 10. After the test: the net catches the ball (dev), and finding the hoop automatically
