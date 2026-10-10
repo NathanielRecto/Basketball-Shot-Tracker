@@ -3,6 +3,7 @@
     python scripts/replay_eval.py                 # dev videos 1 4 5 8 9 12 13 16
     python scripts/replay_eval.py --errors        # also list every error with context
     python scripts/replay_eval.py --labels data/own_footage/labels --videos 1   # own dev session
+    python scripts/replay_eval.py ... --stride 3 --offset 1   # every 3rd saved frame: ~20 detector fps, as on the phone
 
 Needs outputs/debug/video_XX/debug.json (scripts/debug_video.py) and labels. Development
 videos only: never point this at the test set while tuning.
@@ -22,7 +23,8 @@ from shottracker.evaluation import PredictedShot, evaluate_video, load_labels, s
 DEV = [1, 4, 5, 8, 9, 12, 13, 16]
 
 
-def run(videos, conf, tol, show_errors, labels_dir=ROOT / "data" / "eval_videos" / "labels", debug_root=ROOT / "outputs" / "debug"):
+def run(videos, conf, tol, show_errors, labels_dir=ROOT / "data" / "eval_videos" / "labels", debug_root=ROOT / "outputs" / "debug",
+        stride=1, offset=0):
     results = []
     names = {video_number(f.stem): f.stem for f in Path(labels_dir).glob("*_*.csv")}
     for v in videos:
@@ -32,7 +34,9 @@ def run(videos, conf, tol, show_errors, labels_dir=ROOT / "data" / "eval_videos"
         if not dbg.is_file() or not lab.is_file():
             print(f"skip {name}: missing debug.json or labels")
             continue
-        events, _, log = replay(json.loads(dbg.read_text()), conf)
+        debug = json.loads(dbg.read_text())
+        debug["frames"] = debug["frames"][offset::stride]
+        events, _, log = replay(debug, conf)
         preds = [PredictedShot(e.t_cross, e.outcome.value, e.reason) for e in events]
         r = evaluate_video(name, load_labels(lab), preds, tol)
         results.append(r)
@@ -46,7 +50,7 @@ def run(videos, conf, tol, show_errors, labels_dir=ROOT / "data" / "eval_videos"
                       f"{err['reason']:<12}{extra}  | {ctx}")
     s = summarize(results)
     lo, hi = s.end_to_end_ci95
-    print(f"\nconf {conf}: labelled {s.labeled}  found {s.matched}  extra {s.predicted - s.matched}  "
+    print(f"\nconf {conf}{f' stride {stride} offset {offset}' if stride > 1 else ''}: labelled {s.labeled}  found {s.matched}  extra {s.predicted - s.matched}  "
           f"| recall {100 * s.recall:.1f}%  precision {100 * s.precision:.1f}%  outcome {100 * s.outcome_accuracy:.1f}%  "
           f"| END-TO-END {100 * s.end_to_end_accuracy:.1f}% (95% CI {100 * lo:.0f}-{100 * hi:.0f}%)")
     return results
@@ -60,8 +64,12 @@ def main():
     ap.add_argument("--errors", action="store_true")
     ap.add_argument("--labels", default=str(ROOT / "data" / "eval_videos" / "labels"))
     ap.add_argument("--debug-root", default=str(ROOT / "outputs" / "debug"))
+    ap.add_argument("--stride", type=int, default=1, help="replay every Nth saved frame (a slower detector)")
+    ap.add_argument("--offset", type=int, default=0, help="which frame of each stride to keep (0..stride-1)")
     a = ap.parse_args()
-    run(a.videos, a.conf, a.tol, a.errors, a.labels, a.debug_root)
+    if not 0 <= a.offset < a.stride:
+        ap.error("--offset must be in 0..stride-1")
+    run(a.videos, a.conf, a.tol, a.errors, a.labels, a.debug_root, a.stride, a.offset)
     return 0
 
 

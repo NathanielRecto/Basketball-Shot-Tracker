@@ -70,6 +70,8 @@ class ShotDetector:
         self._desc_max: Optional[BallObs] = None
         self._pending: Optional[_Pending] = None
         self._count = 0
+        self._last_t: Optional[float] = None
+        self._frame_dts: Deque[float] = deque(maxlen=31)  # recent update() intervals: the detector's frame rate
 
     # ---- public API -------------------------------------------------------------------
 
@@ -84,6 +86,9 @@ class ShotDetector:
             self.log.append((t, "track_switch"))
 
     def update(self, t: float, ball: Optional[BallObs], hoop: Optional[Box]) -> List[ShotEvent]:
+        if self._last_t is not None and t > self._last_t:
+            self._frame_dts.append(t - self._last_t)
+        self._last_t = t
         if hoop is not None:
             self._hoop = hoop
         if ball is not None:
@@ -123,6 +128,13 @@ class ShotDetector:
         """
         return self.cfg.hoop_aspect * self._hoop.w
 
+    def _frame_s(self) -> float:
+        """The detector's usual frame interval (median of recent update() intervals); 1/60 s until known."""
+        if not self._frame_dts:
+            return 1 / 60
+        dts = sorted(self._frame_dts)
+        return dts[len(dts) // 2]
+
     def _rim_y(self) -> float:
         h = self._hoop
         return h.y1 + self.cfg.rim_line_frac * self._u()
@@ -150,7 +162,9 @@ class ShotDetector:
             start -= 1
         seg = pts[start:]
         apex = min(range(len(seg)), key=lambda i: seg[i].y)
-        tol, still = cfg.rise_tol * self._u(), cfg.still_frac * self._u()
+        # "Held" = moved less than still_speed over one detector frame (the usual update interval, not the gap
+        # since the last sighting: a ball missed for a few frames is not slower for it).
+        tol, still = cfg.rise_tol * self._u(), cfg.still_speed * self._u() * self._frame_s()
         j = apex
         while j > 0:
             a, b = seg[j - 1], seg[j]

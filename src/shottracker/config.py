@@ -35,7 +35,9 @@ class ShotConfig:
     max_fit_rms: float = 0.6  # of hoop height; rejects non-parabolic "flights"
     trim_rms: float = 0.2  # of hoop height; leading points are dropped until the fit is this tight
     rise_tol: float = 0.15  # of hoop height; wobble tolerated while walking back to the release
-    still_frac: float = 0.08  # of hoop height; below this per-frame motion the ball is "held"
+    # Below this speed the ball is "held", not flying. Was 0.08 hoop heights per frame at 60 fps; as a speed it means
+    # the same at any detector rate (per frame, a 20 fps phone saw held balls move 3x as far and glued them to the arc).
+    still_speed: float = 4.8  # hoop heights / s
     interp_max_gap_s: float = 0.10
     min_flight_s: float = 0.2
 
