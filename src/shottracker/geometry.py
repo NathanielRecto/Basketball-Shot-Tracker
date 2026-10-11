@@ -95,7 +95,7 @@ class FlightFit:
 def dist(dx: float, dy: float) -> float:
     """Length of (dx, dy), spelled out as sqrt(dx*dx + dy*dy) so another language computes the same bits.
 
-    ``math.hypot`` is more careful but rounds differently from JavaScript's ``Math.hypot``, and the phone
+    ``math.hypot`` is more careful, but other languages' hypot functions round differently, and the phone
     app's port must reproduce this code exactly (docs/app_port.md).
     """
     return math.sqrt(dx * dx + dy * dy)

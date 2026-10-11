@@ -9,7 +9,8 @@ Two models are evaluated separately:
    precision / recall / F1, accuracy and confidence intervals.
 
 Sections 1–4 cover the public phone videos with the original system; section 5 covers our own
-iPhone footage; section 6 covers the current system (retrained detector) on both. Regenerate
+iPhone footage; section 6 covers the current system (retrained detector) on both; sections 7–12 the later
+tracker work and the first-look test in a second gym (section 9); section 13 the system on the iPhone. Regenerate
 the figures and numbers in sections 1–4 with `python scripts/make_report.py`
 (raw numbers: [`results_metrics.json`](results_metrics.json)).
 
@@ -341,8 +342,8 @@ End-to-end accuracy, old dev videos (portrait) / own session 1 (landscape):
 
 Frame rate barely matters, and landscape footage holds at 640 px; portrait video needs at least
 960 px. Target for the app: landscape filming, 960 px at 20–30 fps, with 640 px at 30 fps as the
-fallback. Speed on the iPhone itself is not yet measured. Differences of 2–3 points here are one or
-two shots.
+fallback. Differences of 2–3 points here are one or two shots. On the iPhone itself, 960 px runs at
+about 28 fps (section 13).
 
 ## 7. Balls that leave through the top of the frame (dev, October 2026)
 
@@ -564,3 +565,57 @@ through the hoop (made, "rattled in"), outside it (missed) or back up (rim out).
 
 On dev it was used once (session 2, 3:25: a miss off the rim, now counted and called missed) and
 changed no other call. Dev footage has few front-rim shots, so how much it helps needs new footage.
+
+## 13. On the iPhone: frame rate, detector match and the Swift port (October 2026)
+
+The live app ([Basketball-Shot-Tracker-iOS](https://github.com/NathanielRecto/Basketball-Shot-Tracker-iOS)) runs
+the same system on an iPhone 11: detector v2 in Core ML, then the static filter, tracker and shot judge ported to
+Swift. Three things had to hold for its calls to mean what the numbers above mean. Everything here is dev data;
+live accuracy on the phone still needs new test footage.
+
+### Frame rate: the phone sees every second or third frame
+
+The phone runs the detector at 22–28 fps on 60 fps camera frames, so the tracker gets every second or third
+frame. Replaying the saved detections of the own dev sessions with only every Nth frame
+(`scripts/replay_eval.py --stride N --offset k`, every offset) showed a frame-rate dependence: the "ball is still
+held" check, when walking back from the apex to the release, was a distance **per frame** (0.08 hoop heights).
+At 20 fps a held ball moves three times as far per frame, so the gather and dribble were glued to the arc and the
+shot was discarded as "not parabolic". It is now a speed (`still_speed` 4.8 = 0.08 x 60 per second) times the
+detector's usual frame interval (the median of recent intervals, not the gap since the last sighting; using the
+gap cost 5 dev shots at 60 fps). At 60 fps nothing changes.
+
+| Dev shots called right | First gym, sessions 1-4 (162) | Second gym, sessions 5, 9-11 (102) |
+|---|---|---|
+| Every frame (60 fps) | 153 -> 153 | 97 -> 97 |
+| Every 2nd frame (30 fps), 2 offsets | 150, 146 -> 150, 147 | 97, 96 -> 97, 97 |
+| Every 3rd frame (20 fps), 3 offsets | 150, 144, 143 -> 151, 144, 142 | 89, 92, 89 -> **97, 97, 95** |
+
+(Before -> after the fix; hand-marked hoops.) The public dev videos, whose saved detections are every 2nd frame,
+went from 92 to 93 of 98. In the first gym, where the camera was low and close, 20 fps still costs up to 11
+shots: short flights near the hoop and makes whose crossing point is less precise with a third of the samples
+near the rim. More frames per second is the remaining lever there, not more tuning.
+
+### The detector on the phone matches PyTorch
+
+`scripts/export_coreml.py` converts detector v2 without NMS (fp16 for the Neural Engine, fp32 for reference); the
+app letterboxes like Ultralytics (OpenCV's exact 2x2 average for 1920x1080 -> 960x540, grey 114) and decodes the
+raw head with the same thresholds and per-class NMS. `scripts/export_parity_frames.py` saves 24 dev frames as PNG
+(3 per dev session) with PyTorch's detections; the app's check runs its own detector on the same pixels:
+
+| 60 PyTorch boxes | Matched | Missed / extra | IoU mean (min) | Max conf difference | Max corner difference |
+|---|---|---|---|---|---|
+| fp32, exact resize | 60 | 0 / 0 | 1.000 (0.999) | 0.000 | 0.0 px |
+| **fp16, exact resize (live)** | 60 | 0 / 0 | 0.988 (0.959) | 0.013 | 0.7 px |
+| fp16, Apple's vImage resize | 60 | 0 / 1 | 0.982 (0.940) | 0.066 | 3.2 px |
+
+fp32 reproduces PyTorch exactly, so the preprocessing, decoding and NMS are identical; fp16 moves boxes by under a
+pixel. On the phone: camera 60 fps, detector about 28 fps (model 35 ms, letterbox 2 ms, decode 0.3 ms, about 60
+ms from frame to call).
+
+### The tracker and shot judge are the same code
+
+The Swift port is checked against golden cases exported from this repo (`scripts/export_app_fixtures.py`, commit
+`c2ded21`, [docs/app_port.md](app_port.md)): the simulator case, own sessions 1 and 2, and second-gym session 5
+replayed at every 3rd frame (the phone's rate). On all 33,386 frames the port returns the same tracked ball and
+track switches, and the same 123 shot calls and decision log, compared exactly as doubles. Fixing the detector
+frame interval at 1/60 s instead breaks three of the four cases, so the check is not vacuous.

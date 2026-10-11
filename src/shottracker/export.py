@@ -10,7 +10,7 @@ Two products, both plain JSON:
 
 Inputs are rounded BEFORE the expectations are computed, so the port receives exactly the numbers
 the Python saw. Expected values are written at full float precision (JSON round-trips doubles), and
-the port should match them exactly; Python floats and JavaScript numbers are the same IEEE doubles.
+the port should match them exactly; Python floats and Swift Doubles are the same IEEE doubles.
 Only detections (numbers) are exported, never images.
 """
 from __future__ import annotations

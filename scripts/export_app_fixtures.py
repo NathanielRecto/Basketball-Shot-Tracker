@@ -4,8 +4,9 @@
     python scripts/export_app_fixtures.py --debug-json outputs/debug960_det2/session_01/debug.json --name own_session_01
 
 Writes <out>/params.json, <out>/golden/<name>.json and <out>/manifest.json (Python commit, case
-sizes and SHA-256 hashes). Copy the folder into the app repo; regenerate whenever the tracker,
-shot logic or their settings change. Always included: a synthetic case covering every shot type.
+sizes and SHA-256 hashes). Copy its contents to the iOS repo's Packages/ShotCore/Tests/ShotCoreTests/Fixtures/;
+regenerate whenever the tracker, shot logic or their settings change. Always included: a synthetic case
+covering every shot type.
 Optional: real cases from debug.json files (scripts/debug_video.py), which hold detections only,
 no images. Only export footage you have the rights to publish: the public evaluation videos have
 no licence and are refused.

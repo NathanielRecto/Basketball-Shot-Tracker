@@ -1,7 +1,9 @@
 # Porting the tracker to the phone app
 
-The app lives in its own repo: [Basketball-Shot-Tracker-App](https://github.com/NathanielRecto/Basketball-Shot-Tracker-App)
-(Expo / React Native, TypeScript; port in `src/shottracker/`, comparison in `tests/golden.test.ts`).
+The app lives in its own repo: [Basketball-Shot-Tracker-iOS](https://github.com/NathanielRecto/Basketball-Shot-Tracker-iOS)
+(native Swift; port in `Packages/ShotCore/Sources/ShotCore/`, comparison in
+`Packages/ShotCore/Tests/ShotCoreTests/GoldenTests.swift`, run with `swift test` on Linux / WSL or a Mac). An
+earlier Expo / React Native prototype was checked the same way with a TypeScript port; the Swift app replaced it.
 
 The phone app re-implements the static filter, ball tracker and shot judge (`src/shottracker/tracking.py`,
 `shot_logic.py`, `pipeline.py`) in its own language. This repo stays the reference: changes are made and
@@ -13,7 +15,8 @@ python scripts/export_app_fixtures.py
 python scripts/export_app_fixtures.py --debug-json outputs/debug960_det2/session_01/debug.json --name own_session_01
 ```
 
-writes `exports/app/` (gitignored here; copy the whole folder into the app repo):
+writes `exports/app/` (gitignored here; copy its contents to the app repo's
+`Packages/ShotCore/Tests/ShotCoreTests/Fixtures/`):
 
 | File | What it is |
 |---|---|
@@ -65,7 +68,8 @@ fit is plain least squares (sums in sample order, Cramer's rule) instead of `num
 `geometry.dist` (`sqrt(dx*dx + dy*dy)`) instead of `math.hypot`, and sums are explicit loops instead of
 `sum()` (which changes its algorithm in Python 3.12) and `** 2`. Switching to these changed none of the
 751 shot calls on the dev footage. Keep to them when editing `geometry.py`, `tracking.py` or
-`shot_logic.py`; the app repo's `docs/porting.md` lists the same rules from the other side.
+`shot_logic.py`; the Swift port keeps the same operation order, Python's first-wins `min` / `max` and stable sorts,
+and formats numbers in log messages the way Python does (`pyFixed`).
 
 ## Data rules
 

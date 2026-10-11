@@ -80,6 +80,14 @@ The current system on the public test videos: **92.2%** end-to-end (was 77.7%), 
 holds at 20 frames per second and, for landscape video, at 640 px input: the target for the
 phone app. Full write-up: [docs/RESULTS.md §5–6](docs/RESULTS.md#6-current-system-retrained-detector--tracker-v2-october-2026).
 
+**On the iPhone** ([Basketball-Shot-Tracker-iOS](https://github.com/NathanielRecto/Basketball-Shot-Tracker-iOS),
+native Swift): detector v2 runs live on an iPhone 11 at about **28 frames per second** (Core ML, 35 ms per
+frame); on 24 dev frames its boxes match PyTorch's exactly in fp32 and within 0.7 px in the fp16 model the app
+uses. The tracker and shot judge are ported to Swift and make **exactly** the same decisions as this code on
+four golden cases (33,386 frames, 123 shot calls). At the phone's ~20–28 fps the dev footage scores 90–94%
+against 94.7% at 60 fps. Live accuracy on the phone is not measured yet: that needs new test footage
+([RESULTS §13](docs/RESULTS.md#13-on-the-iphone-frame-rate-detector-match-and-the-swift-port-october-2026)).
+
 ## Data splits
 
 Separate datasets, never mixed: the detector was **not** trained on any of the 16
@@ -324,7 +332,7 @@ src/shottracker/
   pipeline.py      glue              render.py / video.py / cli.py
   sim.py           simulated shots for tests and the demo
 scripts/           training, labelling, hoop marking, evaluation, debugging
-tests/             94 tests
+tests/             107 tests
 docs/labeling.md   how to label evaluation videos
 ```
 
@@ -336,11 +344,12 @@ docs/labeling.md   how to label evaluation videos
    sessions). Next: new test sessions to measure these. More detector training is on hold: two
    retrained detectors scored better on validation images but worse on shot calls
    ([RESULTS §8](docs/RESULTS.md#8-more-detector-training-did-not-help-shot-calls-v3-v4)).
-2. **iPhone app** ([Basketball-Shot-Tracker-App](https://github.com/NathanielRecto/Basketball-Shot-Tracker-App), Expo / React Native). Done: tracker logic
-   ported and verified identical to Python, hoop setup on the camera, a demo replay through the real tracker,
-   session summary, history with FG% trend, session types (FT / mid-range / threes / freestyle), light and dark
-   themes, sharing a session as an image. Next: run detector v2 on the phone for live MADE / MISSED calls,
-   with the automatically found hoop as a suggestion the player confirms.
+2. **iPhone app** ([Basketball-Shot-Tracker-iOS](https://github.com/NathanielRecto/Basketball-Shot-Tracker-iOS),
+   native Swift, built and installed from Windows with [xtool](https://github.com/xtool-org/xtool)). Done: live
+   MADE / MISSED on an iPhone 11 at ~28 fps with detector v2 in Core ML, the hoop found from the rim automatically,
+   the tracker and shot judge identical to Python on the golden cases ([RESULTS §13](docs/RESULTS.md#13-on-the-iphone-frame-rate-detector-match-and-the-swift-port-october-2026)).
+   An earlier Expo / React Native prototype (TypeScript port, demo replay, session history) was replaced by it.
+   Next: record sessions in the app (video + its calls) and measure live accuracy on new test footage.
 3. Validate release / entry angles and pose metrics against ground truth.
 4. Layup / close-range shot mode.
 
