@@ -156,6 +156,10 @@ Nearly all simulated errors are "fall past" misses where the ball is hidden righ
 the net-braking check needs to see the ball falling (100% caught when visible, 0% when hidden).
 This measures the logic on the project's own simulator, not real-world accuracy.
 
+These are the original logic's numbers. The current logic (sections 7 and 10–13) scores 96.0 / 96.0 / 94.5 /
+91.0% on the same rows (`scripts/eval_synthetic.py`, 2026-10-11): the real-footage rules (net braking 1.3,
+distances in rim widths) cost the simulator up to 1.8 points at high noise.
+
 ## 5. Own iPhone footage (October 2026)
 
 The 16 public videos above are mostly side-on views of one shooter. To test the system on the
@@ -343,7 +347,7 @@ End-to-end accuracy, old dev videos (portrait) / own session 1 (landscape):
 Frame rate barely matters, and landscape footage holds at 640 px; portrait video needs at least
 960 px. Target for the app: landscape filming, 960 px at 20–30 fps, with 640 px at 30 fps as the
 fallback. Differences of 2–3 points here are one or two shots. On the iPhone itself, 960 px runs at
-about 28 fps (section 13).
+28–32 fps (section 13).
 
 ## 7. Balls that leave through the top of the frame (dev, October 2026)
 

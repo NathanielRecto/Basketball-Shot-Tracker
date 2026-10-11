@@ -12,6 +12,9 @@ NumPy, MediaPipe.
 gym the system had never seen (free throws 76.7%, mid-range 90.0%, threes 90.0%; 87 of 90 shots
 found, none invented), with the system frozen and fingerprinted before a single scoring run
 ([RESULTS §9](docs/RESULTS.md#9-first-look-test-in-a-second-gym-october-2026)).
+Fixes made since then for exactly those errors score 94–95% on development footage (first gym 94.4%,
+second gym 95.1%, public videos 94.9%), but dev numbers are tuned on the shots they are measured on:
+new test footage will measure them ([RESULTS §10–13](docs/RESULTS.md#10-after-the-test-the-net-catches-the-ball-dev-and-finding-the-hoop-automatically)).
 
 Earlier: **77.7%** end-to-end on 103 hand-labelled shots from 16 public phone
 videos (95% CI 69–85%), first look, original system. After retraining the detector on licensed
@@ -81,11 +84,12 @@ holds at 20 frames per second and, for landscape video, at 640 px input: the tar
 phone app. Full write-up: [docs/RESULTS.md §5–6](docs/RESULTS.md#6-current-system-retrained-detector--tracker-v2-october-2026).
 
 **On the iPhone** ([Basketball-Shot-Tracker-iOS](https://github.com/NathanielRecto/Basketball-Shot-Tracker-iOS),
-native Swift): detector v2 runs live on an iPhone 11 at about **28 frames per second** (Core ML, 35 ms per
-frame); on 24 dev frames its boxes match PyTorch's exactly in fp32 and within 0.7 px in the fp16 model the app
-uses. The tracker and shot judge are ported to Swift and make **exactly** the same decisions as this code on
-four golden cases (33,386 frames, 123 shot calls). At the phone's ~20–28 fps the dev footage scores 90–94%
-against 94.7% at 60 fps. Live accuracy on the phone is not measured yet: that needs new test footage
+native Swift): detector v2 runs live on an iPhone 11 at **28–32 frames per second** (Core ML, 31–35 ms per
+frame, 45–62 ms from frame to call); on 24 dev frames its boxes match PyTorch's exactly in fp32 and within 0.7 px
+in the fp16 model the app uses. The tracker and shot judge are ported to Swift and make **exactly** the same
+decisions as this code on four golden cases (33,386 frames, 123 shot calls), and a recording made in the app
+replays here with the same calls (6 of 6). At the phone's lower frame rate (replayed at 20 and 30 fps) the dev
+footage scores 90–94% against 94.7% at 60 fps. Live accuracy on the phone is not measured yet: that needs new test footage
 ([RESULTS §13](docs/RESULTS.md#13-on-the-iphone-frame-rate-detector-match-and-the-swift-port-october-2026)).
 
 ## Data splits
@@ -98,8 +102,8 @@ evaluation videos.
 | **"hotshot" detector dataset** (3,625 images, CC BY 4.0) | Training the ball/hoop detector | 3,023 train / 190 validation / 412 test images | The dataset publisher's own split (Roboflow export), not ours. Its test images come from the same source videos as its training images, so its test mAP (0.970) is inflated; the validation numbers are the honest detector metrics |
 | **"Basketball Detection v6" by Hooper** (48,110 images, CC BY 4.0) | Retraining the detector (v2): phone video of gyms with many people | Every 8th frame: 5,324 train / 690 validation | Ours: validation = whole blocks of 2,000 consecutive frames, so near-identical neighbours never land on both sides. Rim-only hoop boxes kept as a separate class |
 | **16 phone videos** (201 hand-labelled shots) | Measuring the whole system's make/miss accuracy | **Dev** (98 shots): videos 1, 4, 5, 8, 9, 12, 13, 16<br>**Test** (103 shots): videos 2, 3, 6, 7, 10, 11, 14, 15 | By **whole video** (frames of one video never land on both sides), fixed before any tuning, balanced so each half has one video of every setup (indoor/outdoor × ground/tripod camera × free throw/three-pointer). Dev for debugging and tuning; test scored once at the end |
-
-| **Own iPhone sessions** (162 hand-labelled shots) | Measuring the system on our own footage | **Dev** (43 shots): session 1<br>**Test** (119 shots): sessions 2, 3, 4 | By whole session, fixed before any tuning; session 1 (two balls in play at times) is dev. Videos not published |
+| **Own iPhone sessions, first gym** (162 hand-labelled shots) | Measuring the system on our own footage | **Dev** (43 shots): session 1<br>**Test** (119 shots): sessions 2, 3, 4 (dev since 2026-10-07, after being scored twice) | By whole session, fixed before any tuning; session 1 (two balls in play at times) is dev. Videos not published |
+| **Own iPhone sessions, second gym** (192 hand-labelled shots) | The first-look test, in a gym no part of the system had seen | **Test** (90 shots): sessions 6, 7, 8 (free throws / mid-range / threes)<br>**Dev** (102 shots): sessions 5, 9, 10, 11 | By whole session, fixed before anything ran on them; test scored once with frozen code. Videos not published |
 
 Per-video details: [docs/RESULTS.md](docs/RESULTS.md#data-splits).
 
@@ -110,7 +114,7 @@ flowchart LR
     V[Video frame] --> D[YOLOv8 detector<br/>ball + hoop]
     D --> S[Static suppression<br/>drop detections that never move]
     S --> T[Ball tracker<br/>constant-velocity gate,<br/>motion-confirmed starts]
-    H[Hoop calibration<br/>consensus box, once per video] --> J
+    H[Hoop finder<br/>biggest rim box + net] --> J
     T --> J[Shot judge<br/>state machine]
     J --> E[Shot events<br/>made / missed, angles]
     E --> R[Stats, overlays,<br/>evaluation]
@@ -128,11 +132,11 @@ rather than on a second learned model:
   cannot see depth), so it is a miss.
 * **Rim rattle**: after the ball touches the rim the judge waits for it to settle, so a bounce
   that drops in is one make and a pop-out is one miss (never two shots).
-* **Fixed-camera tricks**: the hoop is located once per video from many weak detections; a
-  detection that stays in one spot (a round rim bracket, a spare ball) is ignored; weak ball
-  detections may start a track only when motion between frames confirms them.
-* All thresholds are relative to hoop size and in seconds, so they carry across resolutions and
-  frame rates.
+* **Fixed-camera tricks**: the hoop is found from the detector's rim boxes over many frames (the
+  biggest rim is the nearest hoop); a detection that stays in one spot (a round rim bracket, a spare
+  ball) is ignored; weak ball detections may start a track only when motion between frames confirms them.
+* All distances are in rim widths and all times in seconds, so they carry across resolutions, zoom and
+  frame rates (20–60 fps).
 
 ### Example: one video, frame by frame
 
@@ -153,7 +157,7 @@ rather than on a second learned model:
   contact, call); a replay tool lists every visible ball arc next to what the tracker decided.
 * **Synthetic simulator** for the judging logic (makes, misses, rim-outs, bounces, rattle-ins,
   occlusion, noise, dropped detections) used by the tests and a stress benchmark.
-* **77 tests** (unit, integration, end-to-end) run on every push via GitHub Actions.
+* **110 tests** (unit, integration, end-to-end) run on every push via GitHub Actions.
 * Clean licensing: datasets and dependencies credited in `THIRD_PARTY.md`; no third-party
   videos or images are redistributed.
 
@@ -163,7 +167,7 @@ rather than on a second learned model:
 py -3.10 -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements-dev.txt
-pytest                                   # 77 tests
+pytest                                   # 110 tests
 python -m shottracker demo --out outputs/demo
 ```
 
@@ -184,14 +188,14 @@ by hand (`scripts/mark_hoop.py` lets you drag a box). Use `--imgsz 1280` for tal
 
 ### Speed (GTX 1660 SUPER)
 
-| Stage | Throughput |
-|---|---|
-| Detector, yolov8s at 1280 px (setting used for the results) | 32 frames/s |
-| Detector at 960 px / 640 px | 54 / 91 frames/s |
-| Tracking + shot judging | ~20,000 frames/s |
+| Stage (one 1080p frame) | Time per frame | Throughput |
+|---|---|---|
+| Detector, yolov8s at 1280 px (setting used for the portrait public videos) | 32–33 ms | ~31 frames/s |
+| Detector at 960 px (landscape own footage) / 640 px | 19–21 / 13–14 ms | ~50 / ~75 frames/s |
+| Tracking + shot judging (replaying saved detections) | under 0.2 ms | over 5,000 frames/s |
 
-The judging logic works from 24 to 60 fps, so processing a 60 fps camera every other frame
-runs in real time.
+The judging logic works from 20 to 60 fps (RESULTS §13), so processing a 60 fps camera every other
+frame runs in real time.
 
 ## Measuring accuracy yourself
 
@@ -226,17 +230,18 @@ wrongly called shot with its timestamp.
 **Current (v2):** fine-tuned from the baseline for 12 epochs at 960 px on hotshot + 5,324 Hooper
 frames (`scripts/build_combined_dataset.py`), batch 2, 8.0 h on a GTX 1660 SUPER; validation mAP50
 0.851 (ball 0.747, hoop 0.931) on 880 held-out images. The best epoch was the last and validation
-metrics were still rising, so more epochs would likely help a little. Per-epoch curves and charts:
+metrics were still rising, but 8 more epochs (v3: mAP50 0.866) made shot calls worse (93.9% → 88.8% on
+the public dev videos), so v2 stays ([RESULTS §8](docs/RESULTS.md#8-more-detector-training-did-not-help-shot-calls-v3-v4)). Per-epoch curves and charts:
 [docs/RESULTS.md §6](docs/RESULTS.md#detector-v2).
 
 **Baseline (v1)**, yolov8s, 30 epochs on the CC BY 4.0 "hotshot" dataset:
 
 | Split | mAP50 | mAP50-95 | Note |
 |---|---|---|---|
-| Validation | 0.882 | 0.403 | ball 0.81, hoop 0.95 |
+| Validation | 0.882 | 0.404 | ball 0.81, hoop 0.95 |
 | Test | 0.970 | 0.637 | **inflated**: that dataset's test frames come from the same source videos as its training frames |
 
-### How the dev score moved
+### How the dev score moved (original system, public dev videos, 2026-10-02)
 
 | Change (each justified by labels or physics, measured on dev only) | Dev end-to-end |
 |---|---|
@@ -252,18 +257,22 @@ persistent false "ball" on the rim bracket, and weak in-flight detections being 
 ### Judging logic on synthetic shots
 
 400 simulated shots per row (makes, misses, rim-outs, rim bounces, rattle-ins, and "fall past"
-misses that look centred from the side; half with the ball hidden near the rim):
+misses that look centred from the side; half with the ball hidden near the rim), current shot logic
+(`python scripts/eval_synthetic.py`):
 
-| Detection noise | Missed detections | FPS | Correct |
-|---|---|---|---|
-| 0 px | 0% | 30 | 96.0% |
-| 1.5 px | 10% | 30 | 95.8% |
-| 3 px | 20% | 30 | 95.5% |
-| 5 px | 30% | 30 | 92.8% |
+| Detection noise | Missed detections | FPS | Correct | Original logic (RESULTS §4) |
+|---|---|---|---|---|
+| 0 px | 0% | 30 | 96.0% | 96.0% |
+| 1.5 px | 10% | 30 | 96.0% | 95.8% |
+| 3 px | 20% | 30 | 94.5% | 95.5% |
+| 3 px | 20% | 60 | 95.0% | |
+| 5 px | 30% | 30 | 91.0% | 92.8% |
 
-Nearly all simulated errors are "fall past" misses where the ball is hidden right after the rim:
-net braking needs to *see* the ball falling (100% caught when visible, 0% when hidden). This tests
-the logic on the project's own simulator, not real-world accuracy.
+Most simulated errors are "fall past" misses where the ball is hidden right after the rim: net
+braking needs to *see* the ball falling, so only 63% of them are caught (37% at 5 px noise); with
+more noise some rattle-ins are missed too. The later rules for real footage (net braking 1.3, rim
+widths) cost the simulator up to 1.8 points at high noise. This tests the logic on the project's own
+simulator, not real-world accuracy.
 
 ## What one sideline camera cannot see
 
@@ -302,7 +311,7 @@ from cheapest to hardest:
    bounce or roll afterwards. Done in the shot logic since the test (RESULTS §12); dev footage has few such
    shots, so new footage will show how much it helps.
 5. **Learn make / miss from short clips of the hoop** (net movement, the ball hidden by the mesh), which
-   needs far more labelled shots than the ~190 so far, or a second camera.
+   needs far more labelled shots than the ~550 so far, or a second camera.
 
 ## Assumptions and limits
 
@@ -333,7 +342,7 @@ src/shottracker/
   pipeline.py      glue              render.py / video.py / cli.py
   sim.py           simulated shots for tests and the demo
 scripts/           training, labelling, hoop marking, evaluation, debugging
-tests/             109 tests
+tests/             110 tests
 docs/labeling.md   how to label evaluation videos
 ```
 
@@ -341,16 +350,18 @@ docs/labeling.md   how to label evaluation videos
 
 1. **Own footage**: 11 sessions in two gyms; a first-look test in the second gym scored 85.6%
    (above). Since then, on dev footage only: a "net caught it" check for makes wrongly called "fell
-   past the rim", and automatic hoop finding from the detector's rim boxes (right hoop in 11 of 11
-   sessions). Next: new test sessions to measure these. More detector training is on hold: two
+   past the rim", automatic hoop finding from the detector's rim boxes (right hoop in 11 of 11
+   sessions), shot rules in rim widths, and front-rim shots counted (dev 94–95%). Next: new test
+   sessions to measure these. More detector training is on hold: two
    retrained detectors scored better on validation images but worse on shot calls
    ([RESULTS §8](docs/RESULTS.md#8-more-detector-training-did-not-help-shot-calls-v3-v4)).
 2. **iPhone app** ([Basketball-Shot-Tracker-iOS](https://github.com/NathanielRecto/Basketball-Shot-Tracker-iOS),
    native Swift, built and installed from Windows with [xtool](https://github.com/xtool-org/xtool)). Done: live
-   MADE / MISSED on an iPhone 11 at ~28 fps with detector v2 in Core ML, the hoop found from the rim automatically,
-   the tracker and shot judge identical to Python on the golden cases ([RESULTS §13](docs/RESULTS.md#13-on-the-iphone-frame-rate-detector-match-and-the-swift-port-october-2026)).
+   MADE / MISSED on an iPhone 11 at 28–32 fps with detector v2 in Core ML, the hoop found from the rim automatically,
+   the tracker and shot judge identical to Python on the golden cases, and sessions recorded in the app (video +
+   every detection and call) that replay here with the same calls ([RESULTS §13](docs/RESULTS.md#13-on-the-iphone-frame-rate-detector-match-and-the-swift-port-october-2026)).
    An earlier Expo / React Native prototype (TypeScript port, demo replay, session history) was replaced by it.
-   Next: record sessions in the app (video + its calls) and measure live accuracy on new test footage.
+   Next: measure live accuracy on new test sessions recorded in the app.
 3. Validate release / entry angles and pose metrics against ground truth.
 4. Layup / close-range shot mode.
 
