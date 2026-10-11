@@ -517,10 +517,10 @@ Shot calls with the found hoop instead of the hand-marked one (dev replays, curr
 | Second gym dev, sessions 5, 9-11 | 93.1% | 90.2% (3 shots: 2 not found, 1 wrong call) |
 
 The second gym's nets are shorter (hand-marked boxes 1.15-1.31 times as tall as wide, against 1.32-1.38 in
-the first gym), so the found box is 10-20 px too tall there, and the shot logic measures its thresholds
-in hoop heights. In the app the found hoop is therefore a suggestion the player confirms (pulling the
-bottom edge to the bottom of the net). The lasting fix is to measure the shot rules in rim widths,
-which the detector finds consistently, instead of hoop heights, which depend on the net.
+the first gym), so the found box is 10-20 px too tall there, and the shot logic measured its thresholds
+in hoop heights. The fix is to measure the shot rules in rim widths, which the detector finds consistently,
+instead of hoop heights, which depend on the net (section 11): with it the found hoop does as well as the
+hand-marked one, so the iPhone app finds the hoop on its own and follows it between shots (section 13).
 
 ## 11. Shot rules in rim widths instead of hoop heights (dev)
 
@@ -575,8 +575,8 @@ live accuracy on the phone still needs new test footage.
 
 ### Frame rate: the phone sees every second or third frame
 
-The phone runs the detector at 22–28 fps on 60 fps camera frames, so the tracker gets every second or third
-frame. Replaying the saved detections of the own dev sessions with only every Nth frame
+The phone runs the detector at 25-32 fps on 60 fps camera frames (22 fps before the pipelining below), so the
+tracker gets every second or third frame. Replaying the saved detections of the own dev sessions with only every Nth frame
 (`scripts/replay_eval.py --stride N --offset k`, every offset) showed a frame-rate dependence: the "ball is still
 held" check, when walking back from the apex to the release, was a distance **per frame** (0.08 hoop heights).
 At 20 fps a held ball moves three times as far per frame, so the gather and dribble were glued to the arc and the
@@ -609,8 +609,21 @@ raw head with the same thresholds and per-class NMS. `scripts/export_parity_fram
 | fp16, Apple's vImage resize | 60 | 0 / 1 | 0.982 (0.940) | 0.066 | 3.2 px |
 
 fp32 reproduces PyTorch exactly, so the preprocessing, decoding and NMS are identical; fp16 moves boxes by under a
-pixel. On the phone: camera 60 fps, detector about 28 fps (model 35 ms, letterbox 2 ms, decode 0.3 ms, about 60
-ms from frame to call).
+pixel. Apple's vImage resize (a sharper filter) was 5 times further off, so the app uses the exact 2x2 average.
+
+### Speed on the iPhone 11
+
+| Measured live on the phone | Value |
+|---|---|
+| Camera | 60 fps, 1080p |
+| Detector | 28-32 fps (25 while recording video) |
+| Per frame | letterbox 1.6-1.9 ms, model 30.6-34.9 ms, decode + NMS 0.2-0.3 ms |
+| Frame to call | 45-62 ms |
+
+Letterboxing frame N+1 on the camera queue while the model runs frame N (at most 2 frames in flight) took the
+detector from 22 to 28-32 fps. A first version ran at about 10 fps because the box decoder was a generic Swift
+function called across a module boundary, which the compiler did not specialise (24 ms per frame); a non-generic
+version takes 0.3 ms.
 
 ### The tracker and shot judge are the same code
 
@@ -619,3 +632,27 @@ The Swift port is checked against golden cases exported from this repo (`scripts
 replayed at every 3rd frame (the phone's rate). On all 33,386 frames the port returns the same tracked ball and
 track switches, and the same 123 shot calls and decision log, compared exactly as doubles. Fixing the detector
 frame interval at 1/60 s instead breaks three of the four cases, so the check is not vacuous.
+
+### Real phone recordings, replayed here
+
+The app's **Record** button saves the video and a `session.json` (format `shottracker-phone-session/2`): the app
+build's git commit, the model's sha256, the zoom, every hoop event (found, moved, reset), every detector frame's
+ball boxes, rims and whether the judge was running, and every shot call. **Export session** zips both for the PC.
+`scripts/import_phone_session.py` replays the frames through this repo's pipeline the way the phone ran it (a new
+shot judge wherever the phone found or reset the hoop, the hoop moved at the same frames) and requires the same
+calls; with `--labels` it scores them with the same evaluation as every result above.
+
+| Recording | Detector fps | Hoop events | Calls | Python replay |
+|---|---|---|---|---|
+| 30 s, 0.5x, hand-held (format 1) | 25.2 | 9 | 4 | 4 of 4 identical |
+| 64 s, 1x, judge already running at Record | 32.1 | 20 | 6 | 5 of 6; the different one was released before Record |
+| **74 s, 0.5x, build `d29f83c`** | 31.5 | 14 | 6 | **6 of 6 identical** |
+
+A recording started while the judge was already running lacks the state the judge had built before it, so a shot in
+flight at that moment can replay differently. From build `d29f83c` the judge restarts when recording starts, and a
+recording replays exactly. These recordings filmed a monitor and were not labelled: they check that the phone runs
+this code, not how accurate it is live.
+
+Still open: **live accuracy on the phone.** It needs new sessions recorded through a frozen app build (its commit is on
+the start screen and in `session.json`), labelled blind with `scripts/label_shots.py` and scored once with
+`import_phone_session.py --labels`, with the split fixed before filming, as in section 9.
