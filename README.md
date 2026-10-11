@@ -25,9 +25,11 @@ from our **own, harder iPhone footage** (rim near the top of the frame, three pe
 Details below.
 
 <p align="center">
-  <img src="docs/images/demo_synthetic.gif" width="640" alt="Pipeline running on simulated shots: ball trace, hoop box, MADE/MISSED calls">
-  <br><sub>The full pipeline on <b>simulated</b> shots (make, miss, ball hidden by the net, rim-out, rim bounce).
-  The real evaluation videos cannot be redistributed; a real-footage demo is on the roadmap.</sub>
+  <img src="docs/images/demo_real.webp" width="720" alt="Real gym footage: the tracker follows the ball and calls each shot MADE or MISSED with the reason, keeping score">
+  <br><sub><b>Real footage</b>, second gym (dev session 9): three shots in a row (a mid-range make, an in-and-out miss and
+  a three-pointer make), the detector's saved detections replayed through the current tracker and shot judge, with
+  the time between shots cut. Orange: the ball being followed; the arc turns green or red when the call is made.
+  Hand-picked correct calls: the measured accuracy is the test above. Made with <code>scripts/make_demo.py</code>.</sub>
 </p>
 
 ## Results
@@ -221,6 +223,7 @@ wrongly called shot with its timestamp.
 | `scripts/import_phone_session.py` | Imports a session recorded by the iPhone app, replays it here (same calls required) and scores it against labels |
 | `scripts/compare_runs.py` | Scores several runs (e.g. old vs new tracker or detector) on the same labelled shots, side by side |
 | `scripts/make_report.py` | Rebuilds the figures and metrics in `docs/RESULTS.md` sections 1–4 and the detector v2 training charts |
+| `scripts/make_demo.py` | The real-footage demo at the top: replays a session's saved detections through the current code and draws its calls on the video (WebP or GIF) |
 | `scripts/shot_report.py` | A picture of every labelled shot of a run (detections, path followed, call vs label) plus slow-motion clips of the mistakes; `--public` crops to the hoop ([test-shot report](docs/shot_report/)) |
 
 ## More detail
@@ -255,6 +258,12 @@ persistent false "ball" on the rim bracket, and weak in-flight detections being 
 (shots found on dev: 69 → 85 of 98).
 
 ### Judging logic on synthetic shots
+
+<p align="center">
+  <img src="docs/images/demo_synthetic.gif" width="560" alt="Pipeline running on simulated shots: ball trace, hoop box, MADE/MISSED calls">
+  <br><sub>The full pipeline on <b>simulated</b> shots (make, miss, ball hidden by the net, rim-out, rim bounce):
+  <code>python -m shottracker demo</code>.</sub>
+</p>
 
 400 simulated shots per row (makes, misses, rim-outs, rim bounces, rattle-ins, and "fall past"
 misses that look centred from the side; half with the ball hidden near the rim), current shot logic
