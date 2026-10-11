@@ -12,8 +12,9 @@ folder, or the file itself, and writes to outputs/phone_sessions/<name>/:
 
 Then it replays the detections through the Python pipeline the way the phone ran it (a new shot judge where the phone
 found the hoop or was reset, the hoop moved at the same frames) and checks that every call matches: the phone runs
-a golden-tested Swift port of this code, so a difference is a bug, except right after an "initial" hoop (the phone
-was already judging before the recording started, so its earlier state is not in the file). Format /1 files lack
+a golden-tested Swift port of this code, so a difference is a bug, except within ~40 s of an "initial" hoop (the
+phone was already judging before the recording started, so its earlier state is not in the file; app builds from
+2026-10-11 restart the judge when recording starts, so their recordings replay exactly). Format /1 files lack
 the per-frame "judged" flag and hoop kinds, so their replay is approximate. With --labels (time_s,outcome,...
 like data/own_footage/labels) it scores the phone's calls with the same evaluation as every other result.
 """
@@ -31,6 +32,7 @@ from shottracker.config import ShotConfig  # noqa: E402
 from shottracker.evaluation import PredictedShot, evaluate_video, load_labels, summarize  # noqa: E402
 from shottracker.geometry import Box  # noqa: E402
 from shottracker.pipeline import ShotPipeline  # noqa: E402
+from shottracker.tracking import StaticSuppressor  # noqa: E402
 from shottracker.types import Detection  # noqa: E402
 
 TIME_TOL = 1e-6  # the phone's times are relative to its first recorded frame, so they differ in the last bits
@@ -63,7 +65,11 @@ def replay_like_phone(s):
         h.setdefault("kind", None)
         if h["kind"] is None:
             h["kind"] = "initial" if i == 0 else "moved"
-    pipe, calls, hi, notes = None, [], 0, []
+    pipe, calls, hi, notes, warmup = None, [], 0, [], []
+    # How long a judge that started before the recording can still differ from a fresh one: the static filter's history
+    # window plus how long it keeps a spot suppressed, plus the shot judge's own history.
+    sf = StaticSuppressor()
+    memory = sf.window_s + sf.hold_s + ShotConfig().history_s
     for f in s["frames"]:
         while hi < len(hoops) and hoops[hi]["t"] <= f["t"]:
             h = hoops[hi]
@@ -71,27 +77,46 @@ def replay_like_phone(s):
             if h["kind"] in ("found", "reset", "initial"):
                 pipe = ShotPipeline(lambda dets: dets, hoop=Box(*h["box"]))
                 if h["kind"] == "initial":
-                    notes.append(f"{h['t']:.2f} s: already judging when the recording started (state before it is unknown)")
+                    notes.append(f"{h['t']:.2f} s: already judging when the recording started; calls released before "
+                                 f"{h['t'] + memory:.0f} s may differ (state before the recording is unknown)")
+                    warmup.append((h["t"], h["t"] + memory))
             elif h["kind"] == "moved" and pipe is not None:
                 pipe.fixed_hoop = Box(*h["box"])
         judged = f.get("judged", True) if v2 else pipe is not None
         if pipe is not None and judged:
             calls += pipe.step(f["t"], balls(f, s["conf"])).events
-    return calls, notes
+    return calls, notes, warmup
 
 
-def compare(phone, python):
-    """Differences between the phone's calls and Python's replay (empty = identical)."""
-    diffs = []
-    for i, (a, b) in enumerate(zip(phone, python)):
+def compare(phone, python, warmup=()):
+    """(differences, expected differences) between the phone's calls and Python's replay; both empty = identical.
+
+    A difference is expected when the shot was released before the end of a `warmup` window (after an "initial"
+    hoop): the phone's judge and static filter remember things from before the recording, Python cannot.
+    """
+    def warm(t_release):
+        return any(t_release <= hi for _, hi in warmup)
+
+    diffs, expected, used = [], [], set()
+    for i, a in enumerate(phone):  # pair each phone call with Python's call at about the same time (shots are seconds apart)
+        j = next((j for j, b in enumerate(python) if j not in used and abs(b.t_cross - a["t_cross"]) <= 1.0), None)
+        if j is None:
+            (expected if warm(a["t_release"]) else diffs).append(
+                f"shot {i + 1}: phone {a['t_cross']:.3f} s {a['outcome']} {a['reason']}, no call in Python")
+            continue
+        used.add(j)
+        b = python[j]
         same = (a["outcome"] == b.outcome.value and a["reason"] == b.reason and a["method"] == b.method
                 and abs(a["t_cross"] - b.t_cross) <= TIME_TOL and abs(a["cross_offset"] - b.cross_offset) <= TIME_TOL)
         if not same:
-            diffs.append(f"shot {i + 1}: phone {a['t_cross']:.3f} s {a['outcome']} {a['reason']} ({a['method']}) vs "
-                         f"Python {b.t_cross:.3f} s {b.outcome.value} {b.reason} ({b.method})")
-    if len(phone) != len(python):
-        diffs.append(f"{len(phone)} calls on the phone, {len(python)} in Python")
-    return diffs
+            (expected if warm(a["t_release"]) else diffs).append(
+                f"shot {i + 1}: phone {a['t_cross']:.3f} s {a['outcome']} {a['reason']} ({a['method']}) vs "
+                f"Python {b.t_cross:.3f} s {b.outcome.value} {b.reason} ({b.method})")
+    for j, b in enumerate(python):
+        if j not in used:
+            (expected if warm(b.t_release) else diffs).append(
+                f"Python {b.t_cross:.3f} s {b.outcome.value} {b.reason}, no call on the phone")
+    return diffs, expected
 
 
 def main() -> int:
@@ -137,16 +162,20 @@ def main() -> int:
             w.writerow([round(c["t_cross"], 3), c["outcome"], c["reason"], c["method"], round(c["cross_offset"], 3)])
     print(f"  wrote {out / 'debug.json'} and {out / 'calls.csv'}")
 
-    python, notes = replay_like_phone(s)
-    diffs = compare(shots, python)
+    python, notes, warmup = replay_like_phone(s)
+    diffs, expected = compare(shots, python, warmup)
     for n in notes:
         print(f"  note: {n}")
+    for d in expected:
+        print(f"  expected difference (flight began before the recording): {d}")
     if diffs:
         print(f"  REPLAY DIFFERS from the phone ({len(diffs)}):")
         for d in diffs:
             print(f"    {d}")
     else:
-        print(f"  replay matches the phone: all {len(shots)} calls identical in Python")
+        same = len(shots) - len(expected)
+        print(f"  replay matches the phone: {same} of {len(shots)} calls identical in Python"
+              + (f", {len(expected)} started before the recording" if expected else ""))
 
     if a.labels:
         r = evaluate_video(name, load_labels(a.labels), [PredictedShot(c["t_cross"], c["outcome"], c["reason"]) for c in shots], a.tol)
